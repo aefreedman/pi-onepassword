@@ -1,0 +1,30 @@
+{
+  "name": "@aefree/pi-onepassword",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/bash-op-guard.ts"
+    ]
+  },
+  "scripts": {
+    "test": "npx --yes tsx tests/bash-op-guard-validation.ts"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "description": "Pi safety tools for 1Password-related shell behavior.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/aefreedman/pi-onepassword.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aefreedman/pi-onepassword/issues"
+  },
+  "homepage": "https://github.com/aefreedman/pi-onepassword#readme"
+}
