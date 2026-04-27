@@ -2,7 +2,7 @@ import { createBashTool, isToolCallEventType, type ExtensionAPI } from "@marioze
 import { commandRunsBlockedOp } from "./shared/bash-op-guard-core";
 
 const BLOCK_MESSAGE =
-  "`op` is blocked in Pi bash commands. Use explicit Pi tools (for example Codecks tools using TOKEN_OP_REF) instead of invoking 1Password CLI from `bash`.";
+  "`op` is blocked in Pi bash commands. Use explicit 1Password integrations instead of invoking 1Password CLI from `bash`.";
 
 export default function bashOpGuard(pi: ExtensionAPI) {
   const createSanitizedBashTool = (cwd: string) =>

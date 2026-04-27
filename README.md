@@ -8,7 +8,8 @@ This package centralizes how Pi is allowed to interact with 1Password:
 
 - block raw `op` / `op://...` usage from the generic `bash` tool
 - strip 1Password service-account tokens from Pi bash-tool subprocess environments
-- keep 1Password access routed through explicit Pi integrations instead of ad hoc shell commands
+- keep 1Password access routed through explicit integrations instead of ad hoc shell commands
+- provide shared helper code for allow-listed 1Password reads used by explicit integrations
 
 ## Included behavior
 
@@ -17,6 +18,12 @@ This package centralizes how Pi is allowed to interact with 1Password:
 - Blocks direct `op` / `op://...` usage from the `bash` tool.
 - Blocks helper wrappers such as `op-read-allowlist.sh` from generic shell execution.
 - Strips `OP_SERVICE_ACCOUNT_TOKEN` and `OP_SERVICE_ACCOUNT_TOKEN_GITHUB` from Pi bash-tool subprocess environments.
+
+### Allow-listed read helper
+
+`extensions/shared/onepassword-read.ts` owns the shared helper for integrations that need to read a 1Password reference deliberately. It uses `AGENT_OP_ALLOWED_VAULTS` as a harness-agnostic comma-separated vault allow-list.
+
+Generic shell commands remain blocked. Package integrations should import or wrap this helper rather than asking agents to run `op` from `bash`.
 
 ## Install
 
@@ -36,7 +43,7 @@ pi install <path-to-pi-onepassword>
 
 ## Notes
 
-This package does not read secrets itself. It provides guardrails so secret reads happen only through explicit integrations that can apply allow-lists and redaction.
+This package does not expose a general-purpose model-facing secret-reading tool. It provides guardrails and shared helper code so secret reads happen only through explicit integrations that can apply allow-lists and redaction.
 
 ## Testing
 
