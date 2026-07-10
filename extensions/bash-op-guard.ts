@@ -1,5 +1,6 @@
 import { createBashTool, isToolCallEventType, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { commandRunsBlockedOp } from "./shared/bash-op-guard-core";
+import { sanitizeOnePasswordEnvironment } from "./shared/onepassword-env";
 
 const BLOCK_MESSAGE =
   "`op` is blocked in Pi bash commands. Use explicit 1Password integrations instead of invoking 1Password CLI from `bash`.";
@@ -7,12 +8,11 @@ const BLOCK_MESSAGE =
 export default function bashOpGuard(pi: ExtensionAPI) {
   const createSanitizedBashTool = (cwd: string) =>
     createBashTool(cwd, {
-      spawnHook: ({ command, cwd, env }) => {
-        const sanitized = { ...env };
-        delete sanitized.OP_SERVICE_ACCOUNT_TOKEN;
-        delete sanitized.OP_SERVICE_ACCOUNT_TOKEN_GITHUB;
-        return { command, cwd, env: sanitized };
-      },
+      spawnHook: ({ command, cwd, env }) => ({
+        command,
+        cwd,
+        env: sanitizeOnePasswordEnvironment(env),
+      }),
     });
 
   const bashTool = createSanitizedBashTool(process.cwd());
