@@ -1,4 +1,4 @@
-import { createBashTool, isToolCallEventType, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createBashTool, isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { commandRunsBlockedOp } from "./shared/bash-op-guard-core";
 import { sanitizeOnePasswordEnvironment } from "./shared/onepassword-env";
 
