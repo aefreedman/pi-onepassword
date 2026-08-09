@@ -1,11 +1,9 @@
-const SECRET_ONEPASSWORD_ENV_NAMES = new Set([
-  "OP_CONNECT_TOKEN",
-]);
-
 export function isSecretOnePasswordEnvironmentVariable(name: string): boolean {
-  return SECRET_ONEPASSWORD_ENV_NAMES.has(name)
-    || /^OP_SERVICE_ACCOUNT_TOKEN(?:_|$)/.test(name)
-    || /^OP_SESSION(?:_|$)/.test(name);
+  // Environment variable names are case-insensitive on Windows. Apply the
+  // stricter behavior everywhere so a package behaves consistently cross-platform.
+  return /^OP_SERVICE_ACCOUNT_TOKEN(?:_|$)/i.test(name)
+    || /^OP_CONNECT_TOKEN(?:_|$)/i.test(name)
+    || /^OP_SESSION(?:_|$)/i.test(name);
 }
 
 export function sanitizeOnePasswordEnvironment(

@@ -1,57 +1,53 @@
 # Pi OnePassword
 
-Pi package for 1Password-related shell safety policy.
+Least-privilege 1Password helpers and Bash safety policy for trusted Pi extensions.
 
 ## Purpose
 
-This package centralizes how Pi is allowed to interact with 1Password:
+This package keeps 1Password credentials out of generic Pi Bash subprocesses and provides small, package-owned helpers for trusted integrations. It is not a model-facing secret reader and does not provide process isolation from Pi, installed extensions, or other code running as the same operating-system user.
 
-- block raw `op` / `op://...` usage from the generic `bash` tool
-- strip 1Password service-account tokens from Pi bash-tool subprocess environments
-- keep 1Password access routed through explicit integrations instead of ad hoc shell commands
-- provide shared helper code for allow-listed 1Password reads used by explicit integrations
+## Trusted integration contracts
 
-## Included behavior
+`extensions/shared/onepassword-trusted.ts` is for trusted extension code only:
 
-### Bash guard
+- `validateSecretReference()` accepts a syntactically valid `op://...` identifier without resolving it.
+- `validateTrustedExecutable()` requires an absolute, trusted CLI or child executable; it never falls back to `PATH`.
+- `createFixedChildContract()` defines a fixed child executable, fixed arguments, and a reference environment binding. It rejects references in child arguments.
+- `createServiceAccountInvocationEnvironment()` explicitly sets `OP_SERVICE_ACCOUNT_TOKEN` and removes conflicting service-account, Connect, and session inputs case-insensitively.
+- `runBoundedOpRun()` invokes `op run -- <fixed trusted child>` with cancellation, timeout, and output limits. It discards child output and reports only normalized, non-secret results and errors.
 
-- Blocks direct `op` / `op://...` usage from the `bash` tool.
-- Blocks helper wrappers such as `op-read-allowlist.sh` from generic shell execution.
-- Strips secret-bearing 1Password credentials from Pi bash-tool subprocess environments, including service-account tokens, `OP_CONNECT_TOKEN`, and `OP_SESSION_*` values.
+Provide the service-account token through a trusted launcher or user environment, not package or project configuration. Give that dedicated service account only the vault access and actions needed by the fixed integration. References identify a value but are not a security boundary by themselves.
 
-### Allow-listed read helper
+No helper resolves or returns a referenced secret value. A future trusted-only internal resolver may be added only for a fixed TypeScript operation that must consume a value directly.
 
-`extensions/shared/onepassword-read.ts` owns the shared helper for integrations that need to read a 1Password reference deliberately. It uses `AGENT_OP_ALLOWED_VAULTS` as a harness-agnostic comma-separated vault allow-list.
+## Bash guard
 
-The helper runs `op` from `PATH` by default. Set `PI_ONEPASSWORD_OP_EXECUTABLE` to an absolute CLI path when `op` is not on `PATH`; an integration's explicit `executable` option takes precedence over this environment override. If no executable is found, the helper reports the PATH/override remedy without including the requested 1Password reference.
+The Pi Bash extension blocks obvious `op` and `op://...` usage and strips service-account, Connect-token, and session credentials from Bash child environments. Credential-name matching is case-insensitive on all platforms, including Windows.
 
-Generic shell commands remain blocked. Package integrations should import or wrap this helper rather than asking agents to run `op` from `bash`.
+The command-text block is accidental-use prevention only. Shell runtime construction can bypass lexical detection, so it is not an authorization or isolation boundary.
 
 ## Install
 
 Recommended as a global package.
 
-From GitHub:
-
 ```bash
 pi install git:git@github.com:aefreedman/pi-onepassword.git
 ```
 
-Local development install:
+For local development:
 
 ```bash
 pi install <path-to-pi-onepassword>
 ```
 
-## Notes
-
-This package does not expose a general-purpose model-facing secret-reading tool. It provides guardrails and shared helper code so secret reads happen only through explicit integrations that can apply allow-lists and redaction.
-
 ## Testing
 
 ```bash
 npm test
+npm pack --dry-run
 ```
+
+All package tests use inert fakes; they do not contact 1Password or a network.
 
 ## License
 

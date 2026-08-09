@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Replaced the ambient 1Password read helper with trusted, fixed-child `op run` contracts that require an explicit service-account token and absolute executables.
+- Added bounded cancellation, timeout, output-limit, and non-secret error handling for trusted `op run` invocations.
+- Made Bash credential sanitization case-insensitive across all platforms.
 
 ## 0.1.3 - 2026-07-24
 

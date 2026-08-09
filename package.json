@@ -12,12 +12,18 @@
     ]
   },
   "scripts": {
-    "test": "npx --yes tsx tests/bash-op-guard-validation.ts && npx --yes tsx tests/onepassword-read-validation.ts"
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts",
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
-  "description": "Pi safety tools for 1Password-related shell behavior.",
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "tsx": "4.23.11",
+    "typescript": "5.9.3"
+  },
+  "description": "Least-privilege 1Password helpers and Bash safety policy for Pi.",
   "license": "MIT",
   "repository": {
     "type": "git",
