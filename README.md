@@ -42,7 +42,7 @@ Likewise, this package trusts the Pi host, intentionally installed extensions, t
 ## Available fixed contracts
 
 - `runBoundedOpRun()` is the internal bounded fixed-child primitive. It discards child output, bounds cancellation, timeout, and output, and exposes only fixed accepted exit categories.
-- `runFixedAuthenticatedReadCheck()` is a deterministic package test boundary, not a registered tool. Its package-owned child makes only `GET /v1/identity` to a literal loopback fake service.
+- Repository-only Phase 3 tests retain a deterministic loopback fake identity operation to exercise the bounded `op run` boundary. It is not packaged or a public runtime contract.
 - `runCodecksReadonlyAuthCheck()` is a trusted API for the separately owned `pi-codecks` no-argument read-only identity child. Trusted user-level configuration supplies the absolute 1Password and Codecks child paths, configured reference, and safe account metadata. `pi-onepassword` injects the reference and service-account identity, strips ambient Codecks credential variables, and maps only fixed exit categories to a redacted result.
 
 The Codecks child path is trusted user-level configuration because these unreleased packages have no shared released runtime contract. This package validates it is absolute but cannot prove its package origin. Account-backed validation is optional and separately authorized; the compatibility test uses inert fakes only.
@@ -87,8 +87,17 @@ pi install <path-to-pi-onepassword>
 ```bash
 npm test
 npm run typecheck
+npm run scan:sensitive
+npm run pack:validate
+npm run pack:smoke
 npm run pack:dry-run
 ```
+
+`pack:smoke` creates a tarball, installs it offline into a credential-free neutral temporary project, and imports the installed Bash extension, Codecks adapter, and trusted helpers through a fake local `op` process. It does not import a sibling Pi package or contact a network/account. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
+
+### Behavioral-validation boundary
+
+This package intentionally registers no model-facing secret-consuming tool, skill, prompt, or configuration subsystem: its only Pi registration is the Bash safety extension. Therefore provider-backed agent behavior is not a meaningful or available validation target. Deterministic tests instead enforce the code/tool contracts that exist: fixed operation-specific helpers, reference-only configuration, explicit service-account selection and fail-closed absence, redacted results, and Bash sanitization. A consumer package that registers a model-facing operation must validate its own agent behavior and confirmation policy.
 
 All package tests use inert fakes. The authenticated-read test starts an in-process loopback-only fake service; it does not contact 1Password, an external network, or an account. Historical characterization records under `tests/` describe the pre-rebuild behavior only; they are not current configuration or security guidance.
 

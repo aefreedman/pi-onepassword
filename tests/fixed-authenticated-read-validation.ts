@@ -7,7 +7,7 @@ import type { ChildProcess } from "node:child_process";
 import {
   runFixedAuthenticatedReadCheck,
   type FixedAuthenticatedReadResult,
-} from "../extensions/shared/fixed-authenticated-read.ts";
+} from "./support/fixed-authenticated-read.ts";
 import { validateSecretReference, validateTrustedExecutable } from "../extensions/shared/onepassword-trusted.ts";
 import { sanitizeOnePasswordEnvironment } from "../extensions/shared/onepassword-env.ts";
 import { startFakeAuthenticatedService, type FakeAuthenticatedServiceMode } from "./fixtures/fake-authenticated-service.ts";
@@ -16,7 +16,7 @@ const serviceAccountToken = "inert-service-account-token";
 const resolvedToken = "inert-resolved-secret-sentinel";
 const referenceText = "op://Fake Automation/fixed-auth/token";
 const fakeOp = fileURLToPath(new URL("./fixtures/fake-op-run.mjs", import.meta.url));
-const packagedClient = fileURLToPath(new URL("../extensions/integrations/fixed-authenticated-read-client.mjs", import.meta.url));
+const testClient = fileURLToPath(new URL("./fixtures/fixed-authenticated-read-client.mjs", import.meta.url));
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -25,9 +25,9 @@ function assert(condition: unknown, message: string): asserts condition {
 const main = async (): Promise<void> => {
   const tempDirectory = await mkdtemp(join(tmpdir(), "pi-onepassword-fake-"));
   try {
-    const clientSource = await readFile(packagedClient, "utf8");
-    assert(clientSource.includes("http://127.0.0.1:43123/v1/identity"), "Expected the packaged client to use its literal fixed identity destination.");
-    assert(!clientSource.includes("PI_ONEPASSWORD_TEST_BASE_URL") && !clientSource.includes("setTimeout("), "Expected the packaged client to have no destination override or socket timeout.");
+    const clientSource = await readFile(testClient, "utf8");
+    assert(clientSource.includes("http://127.0.0.1:43123/v1/identity"), "Expected the repository-only test client to use its literal fixed identity destination.");
+    assert(!clientSource.includes("PI_ONEPASSWORD_TEST_BASE_URL") && !clientSource.includes("setTimeout("), "Expected the repository-only test client to have no destination override or socket timeout.");
 
     const success = await runCase("success", tempDirectory);
     assert(success.result.category === "authenticated" && success.result.status === "success", "Expected a bounded authenticated result.");
@@ -35,9 +35,10 @@ const main = async (): Promise<void> => {
     assert(success.service.requests[0]?.method === "GET" && success.service.requests[0]?.url === "/v1/identity", "Expected only the fixed read-only endpoint.");
     assert(success.service.requests[0]?.authorization === `Bearer ${resolvedToken}`, "Expected internal fake-op token injection.");
     assertNoDisclosure(success.result, success.argv, success.trace, "success result or execution shape");
-    assert(!success.trace.childEnvironmentNames.includes("OP_SERVICE_ACCOUNT_TOKEN"), "Expected service-account token to stay out of the fixed child.");
-    assert(!success.trace.childEnvironmentNames.includes("OP_CONNECT_TOKEN"), "Expected Connect token to stay out of the fixed child.");
-    assert(!success.trace.childEnvironmentNames.includes("OP_SESSION_PERSONAL"), "Expected session token to stay out of the fixed child.");
+    assert(success.childTrace, "Expected the successful fake child to record its secret-free execution shape.");
+    assert(!success.childTrace.childEnvironmentNames.includes("OP_SERVICE_ACCOUNT_TOKEN"), "Expected service-account token to stay out of the fixed child.");
+    assert(!success.childTrace.childEnvironmentNames.includes("OP_CONNECT_TOKEN"), "Expected Connect token to stay out of the fixed child.");
+    assert(!success.childTrace.childEnvironmentNames.includes("OP_SESSION_PERSONAL"), "Expected session token to stay out of the fixed child.");
 
     const rejected = await runCase("rejected", tempDirectory);
     assert(rejected.result.category === "authentication-rejected" && rejected.result.status === "unauthorized", "Expected redacted rejected-authentication category.");
@@ -102,10 +103,17 @@ async function runCase(
     limits?: { timeoutMs?: number; terminationGraceMs?: number };
     inheritedEnvironment?: NodeJS.ProcessEnv;
   } = {},
-): Promise<{ result: FixedAuthenticatedReadResult; service: Awaited<ReturnType<typeof startFakeAuthenticatedService>>; argv: readonly string[]; trace: Trace }> {
+): Promise<{
+  result: FixedAuthenticatedReadResult;
+  service: Awaited<ReturnType<typeof startFakeAuthenticatedService>>;
+  argv: readonly string[];
+  trace: Trace;
+  childTrace?: Trace;
+}> {
   const service = await startFakeAuthenticatedService(mode);
   const traceFile = join(tempDirectory, `${mode}-${Math.random().toString(16).slice(2)}.json`);
   let argv: readonly string[] = [];
+  let trace: Trace = { childExecutable: "", childArgs: [], childEnvironmentNames: [] };
   try {
     const result = await runFixedAuthenticatedReadCheck({
       opExecutable: validateTrustedExecutable("/trusted/fake-op"),
@@ -121,14 +129,26 @@ async function runCase(
         ...options.inheritedEnvironment,
       },
       spawnProcess: (_executable: string, args: readonly string[], spawnOptions: SpawnOptions): ChildProcess => {
-        argv = args;
+        argv = [...args];
+        // Capture the non-secret command shape synchronously: timeout and
+        // cancellation can stop the fake before it writes its optional trace.
+        trace = {
+          childExecutable: String(args[2] ?? ""),
+          childArgs: args.slice(3),
+          childEnvironmentNames: Object.keys(spawnOptions.env ?? {}).sort(),
+        };
         // The injected fake observes the exact Phase 2 environment while the
         // production helper retains ownership of the real op command shape.
         return spawn(process.execPath, [fakeOp, ...args.slice(2)], spawnOptions);
       },
     });
-    const trace = JSON.parse(await readFile(traceFile, "utf8")) as Trace;
-    return { result, service, argv, trace };
+    const childTrace = await readFile(traceFile, "utf8")
+      .then((contents) => JSON.parse(contents) as Trace)
+      .catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+        throw error;
+      });
+    return { result, service, argv, trace, childTrace };
   } finally {
     await service.close();
   }

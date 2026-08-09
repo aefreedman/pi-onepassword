@@ -6,20 +6,30 @@
   "keywords": [
     "pi-package"
   ],
+  "files": [
+    "extensions/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "pi": {
     "extensions": [
       "./extensions/bash-op-guard.ts"
     ]
   },
   "scripts": {
-    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts && tsx tests/codecks-readonly-auth-validation.ts",
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/bash-op-guard-extension-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts && tsx tests/codecks-readonly-auth-validation.ts && tsx tests/supported-surface-validation.ts",
     "typecheck": "tsc --noEmit",
-    "pack:dry-run": "npm pack --dry-run --json"
+    "pack:dry-run": "npm pack --dry-run --json",
+    "pack:validate": "node scripts/validate-pack-manifest.mjs",
+    "pack:smoke": "node scripts/packed-tarball-smoke.mjs",
+    "scan:sensitive": "node scripts/validate-sensitive-content.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
     "@types/node": "22.19.19",
     "tsx": "4.23.11",
     "typescript": "5.9.3"

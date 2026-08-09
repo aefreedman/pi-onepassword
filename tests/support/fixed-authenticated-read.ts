@@ -9,9 +9,9 @@ import {
   validateSecretReference,
   validateTrustedExecutable,
   type SecretReference,
-} from "./onepassword-trusted.ts";
+} from "../../extensions/shared/onepassword-trusted.ts";
 
-const CLIENT_SCRIPT = fileURLToPath(new URL("../integrations/fixed-authenticated-read-client.mjs", import.meta.url));
+const CLIENT_SCRIPT = fileURLToPath(new URL("../fixtures/fixed-authenticated-read-client.mjs", import.meta.url));
 const CLIENT_EXIT = {
   authenticated: 0,
   authenticationRejected: 10,
