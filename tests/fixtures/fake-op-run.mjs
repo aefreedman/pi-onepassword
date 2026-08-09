@@ -2,13 +2,23 @@ import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
 const [childExecutable, ...childArgs] = process.argv.slice(2);
-const expectedReference = "op://Fake Automation/fixed-auth/token";
-const resolvedToken = "inert-resolved-secret-sentinel";
+const bindings = {
+  PI_ONEPASSWORD_FIXED_AUTH_TOKEN: {
+    reference: "op://Fake Automation/fixed-auth/token",
+    resolved: "inert-resolved-secret-sentinel",
+  },
+  PI_CODECKS_READONLY_AUTH_TOKEN: {
+    reference: "op://Fake Automation/codecks/auth-token",
+    resolved: "inert-codecks-token-sentinel",
+  },
+};
+const binding = Object.entries(bindings).find(([name]) => process.env[name] !== undefined);
 
-if (!childExecutable || process.env.OP_SERVICE_ACCOUNT_TOKEN !== "inert-service-account-token") process.exit(40);
-if (process.env.PI_ONEPASSWORD_FIXED_AUTH_TOKEN !== expectedReference) process.exit(41);
+if (!childExecutable || process.env.OP_SERVICE_ACCOUNT_TOKEN !== "inert-service-account-token" || !binding) process.exit(40);
+const [bindingName, expected] = binding;
+if (process.env[bindingName] !== expected.reference) process.exit(41);
 
-const childEnvironment = { ...process.env, PI_ONEPASSWORD_FIXED_AUTH_TOKEN: resolvedToken };
+const childEnvironment = { ...process.env, [bindingName]: expected.resolved };
 delete childEnvironment.OP_SERVICE_ACCOUNT_TOKEN;
 for (const name of Object.keys(childEnvironment)) {
   if (/^OP_CONNECT(?:_|$)/i.test(name) || /^OP_SESSION(?:_|$)/i.test(name)) delete childEnvironment[name];

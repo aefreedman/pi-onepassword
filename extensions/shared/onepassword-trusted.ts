@@ -18,6 +18,8 @@ export type FixedChildContract = Readonly<{
   executable: TrustedExecutable;
   args: readonly string[];
   referenceEnvironmentName: string;
+  /** Small, fixed non-secret metadata passed only to this trusted child. */
+  environment: Readonly<Record<string, string>>;
 }>;
 
 export type BoundedExecutionLimits = Readonly<{
@@ -105,9 +107,12 @@ export function createFixedChildContract(input: {
   executable: TrustedExecutable;
   args?: readonly string[];
   referenceEnvironmentName: string;
+  /** Fixed non-secret metadata; it cannot override 1Password authentication. */
+  environment?: Readonly<Record<string, string>>;
 }): FixedChildContract {
   const executable = validateTrustedExecutable(input.executable);
   const args = [...(input.args ?? [])];
+  const environment = normalizeFixedChildEnvironment(input.environment, input.referenceEnvironmentName);
   if (
     !isReferenceEnvironmentName(input.referenceEnvironmentName)
     || isConflictingOnePasswordCredentialEnvironmentName(input.referenceEnvironmentName)
@@ -120,6 +125,7 @@ export function createFixedChildContract(input: {
     executable,
     args: Object.freeze(args),
     referenceEnvironmentName: input.referenceEnvironmentName,
+    environment,
   });
 }
 
@@ -140,6 +146,7 @@ export function createServiceAccountInvocationEnvironment(
   serviceAccountToken: string | undefined,
   referenceEnvironmentName: string,
   reference: SecretReference,
+  fixedChildEnvironment: Readonly<Record<string, string>> = {},
 ): NodeJS.ProcessEnv {
   if (!serviceAccountToken?.trim()) {
     throw new OnePasswordOperationError("service-account-required");
@@ -151,6 +158,7 @@ export function createServiceAccountInvocationEnvironment(
     throw new OnePasswordOperationError("invalid-configuration");
   }
   const validatedReference = validateSecretReference(reference);
+  const validatedFixedChildEnvironment = normalizeFixedChildEnvironment(fixedChildEnvironment, referenceEnvironmentName);
 
   // Avoid Object.prototype keys and model Windows' case-insensitive names on
   // every platform. The selected binding is the only spelling that survives.
@@ -167,6 +175,11 @@ export function createServiceAccountInvocationEnvironment(
   }
   environment.OP_SERVICE_ACCOUNT_TOKEN = serviceAccountToken;
   environment[referenceEnvironmentName] = validatedReference;
+  const fixedNames = new Set(Object.keys(validatedFixedChildEnvironment).map((name) => name.toUpperCase()));
+  for (const name of Object.keys(environment)) {
+    if (fixedNames.has(name.toUpperCase())) delete environment[name];
+  }
+  Object.assign(environment, validatedFixedChildEnvironment);
   return environment;
 }
 
@@ -191,6 +204,7 @@ export async function runBoundedOpRun(input: RunBoundedOpRunInput): Promise<Publ
     input.serviceAccountToken,
     fixedChild.referenceEnvironmentName,
     reference,
+    fixedChild.environment,
   );
   if (args.some((argument) => argument.includes(environment.OP_SERVICE_ACCOUNT_TOKEN!))) {
     throw new OnePasswordOperationError("invalid-configuration");
@@ -360,6 +374,34 @@ function requestTermination(child: ChildProcess): void {
     }
   }
   directKill();
+}
+
+function normalizeFixedChildEnvironment(
+  input: Readonly<Record<string, string>> | undefined,
+  referenceEnvironmentName: string,
+): Readonly<Record<string, string>> {
+  const entries = Object.entries(input ?? {});
+  if (entries.length > 8) throw new OnePasswordOperationError("invalid-configuration");
+  const normalized: Record<string, string> = Object.create(null);
+  const names = new Set<string>();
+  for (const [name, value] of entries) {
+    const folded = name.toUpperCase();
+    if (
+      !isReferenceEnvironmentName(name)
+      || isConflictingOnePasswordCredentialEnvironmentName(name)
+      || folded === referenceEnvironmentName.toUpperCase()
+      || names.has(folded)
+      || typeof value !== "string"
+      || value.length > 256
+      || /[\u0000-\u001f\u007f]/.test(value)
+      || containsSecretReference(value)
+    ) {
+      throw new OnePasswordOperationError("invalid-configuration");
+    }
+    names.add(folded);
+    normalized[name] = value;
+  }
+  return Object.freeze(normalized);
 }
 
 function isReferenceEnvironmentName(value: string): boolean {

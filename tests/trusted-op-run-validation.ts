@@ -63,6 +63,7 @@ const main = async (): Promise<void> => {
     executable: validateTrustedExecutable("/trusted/bin/fixed-read-only-consumer"),
     args: ["--fixed-read-only-check"],
     referenceEnvironmentName: "FIXED_CONSUMER_TOKEN",
+    environment: { FIXED_CONSUMER_ACCOUNT: "example-team" },
   });
 
   const environment = createServiceAccountInvocationEnvironment({
@@ -73,12 +74,14 @@ const main = async (): Promise<void> => {
     op_connect_token: "inert-connect-token",
     OP_SESSION_PERSONAL: "inert-session-token",
     fixed_consumer_token: "stale-reference-binding",
-  }, token, fixedChild.referenceEnvironmentName, reference);
+    fixed_consumer_account: "stale-account-binding",
+  }, token, fixedChild.referenceEnvironmentName, reference, fixedChild.environment);
   assert(Object.getPrototypeOf(environment) === null, "Expected a null-prototype invocation environment.");
   assert(environment.PATH === "/normal/path" && environment.LOG_LEVEL === "info", "Expected ordinary environment to remain.");
   assert(environment.OP_SERVICE_ACCOUNT_TOKEN === token, "Expected explicit service-account token.");
   assert(environment.FIXED_CONSUMER_TOKEN === referenceText, "Expected reference only in the fixed environment binding.");
-  for (const name of ["OP_SERVICE_ACCOUNT_TOKEN_OLD", "Op_Connect_Host", "op_connect_token", "OP_SESSION_PERSONAL", "fixed_consumer_token"]) {
+  assert(environment.FIXED_CONSUMER_ACCOUNT === "example-team", "Expected fixed non-secret child metadata to replace case-insensitive inherited values.");
+  for (const name of ["OP_SERVICE_ACCOUNT_TOKEN_OLD", "Op_Connect_Host", "op_connect_token", "OP_SESSION_PERSONAL", "fixed_consumer_token", "fixed_consumer_account"]) {
     assert(!(name in environment), `Expected conflicting ${name} to be stripped.`);
   }
 
@@ -188,6 +191,12 @@ const main = async (): Promise<void> => {
     throw new Error("Expected credential environment override to fail.");
   } catch (error) {
     assert(error instanceof OnePasswordOperationError && error.code === "invalid-configuration", "Expected credential environment name validation.");
+  }
+  try {
+    createFixedChildContract({ executable: fixedChild.executable, referenceEnvironmentName: "TOKEN", environment: { OP_SESSION_PERSONAL: "forbidden" } });
+    throw new Error("Expected fixed child authentication override to fail.");
+  } catch (error) {
+    assert(error instanceof OnePasswordOperationError && error.code === "invalid-configuration", "Expected fixed child metadata validation.");
   }
   try {
     validateTrustedExecutable("op");

@@ -19,7 +19,17 @@ This package keeps 1Password credentials out of generic Pi Bash subprocesses and
 
 Provide the service-account token through a trusted launcher or user environment, not package or project configuration. Give that dedicated service account only the vault access and actions needed by the fixed integration. References identify a value but are not a security boundary by themselves.
 
-No helper resolves or returns a referenced secret value. The fixed authenticated-read integration is intentionally not registered as a Pi tool: it exists solely to prove the fake-backed boundary. Registering a user-facing tool requires a separately agreed real-consumer contract and trusted user-level configuration for that consumer; it must remain fixed-operation and must not accept arbitrary destinations or credentials.
+No helper resolves or returns a referenced secret value. The fixed authenticated-read integration is intentionally not registered as a Pi tool: it exists solely to prove the fake-backed boundary.
+
+### Codecks read-only authentication
+
+`runCodecksReadonlyAuthCheck()` is the first real consumer contract. `pi-onepassword` owns only the explicit service-account environment, configured reference injection, Codecks-credential environment stripping, and bounded `op run` execution. Its trusted user-level configuration supplies absolute `opExecutable` and `trustedCodecksClientExecutable` paths, a reference, and safe account metadata; no model-facing tool or API accepts that configuration.
+
+`pi-codecks` owns the child protocol and exports `resolveCodecksReadonlyAuthClientExecutable()` to resolve its no-argument child from its own `import.meta.url`. That child accepts only `PI_CODECKS_READONLY_AUTH_ACCOUNT` and the injected `PI_CODECKS_READONLY_AUTH_TOKEN`, then performs its fixed official `POST https://api.codecks.io/` logged-in-user query. It never uses an API-base override, dispatches a mutation, or returns a token, reference, raw body, account, or URL. Its fixed exit categories map to this helper's bounded operation/category/status/timing result: authenticated, authentication-rejected, malformed-response, response-too-large, invalid-configuration, or unavailable; local timeout, cancellation, output-limit, and missing-service-account failures remain separately categorized.
+
+**Residual boundary:** this unreleased, separately installed pair has no stable shared runtime export that `pi-onepassword` can import without adding premature release coupling. `pi-onepassword` therefore validates `trustedCodecksClientExecutable` only as an absolute trusted user-level path; it cannot prove the path names the `pi-codecks` child. The launcher/user that supplies that path is the remaining trust boundary. Account-backed use is optional and separately authorized. The compatibility test uses fake `op` and Codecks-child implementations only; it makes no external request.
+
+This is a trusted-package API, not a registered Pi tool or a general HTTP/Bearer-token client. Registering any user-facing integration requires a separately agreed fixed consumer contract and trusted user-level configuration; it must not accept arbitrary destinations or credentials.
 
 ## Bash guard
 
@@ -45,7 +55,8 @@ pi install <path-to-pi-onepassword>
 
 ```bash
 npm test
-npm pack --dry-run
+npm run typecheck
+npm run pack:dry-run
 ```
 
 All package tests use inert fakes. The authenticated-read test starts an in-process loopback-only fake service; it does not contact 1Password, an external network, or an account.

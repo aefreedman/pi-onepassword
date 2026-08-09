@@ -8,6 +8,7 @@
 - Added bounded cancellation, timeout, output-limit, and non-secret error handling for trusted `op run` invocations.
 - Made Bash credential sanitization case-insensitive across all platforms.
 - Added a deterministic loopback fake authenticated identity check that exercises the trusted `op run` path and returns only bounded redacted outcome, status, and timing data.
+- Added the first real-consumer `pi-codecks` read-only authentication contract: `pi-onepassword` injects only the configured reference and trusted account metadata into a bounded child selected by trusted user-level configuration, strips ambient Codecks credential variables, maps only Codecks-owned redacted exit categories to public results, and reports missing service-account configuration as invalid configuration.
 
 ## 0.1.3 - 2026-07-24
 

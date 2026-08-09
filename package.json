@@ -12,8 +12,9 @@
     ]
   },
   "scripts": {
-    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts",
-    "typecheck": "tsc --noEmit"
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts && tsx tests/codecks-readonly-auth-validation.ts",
+    "typecheck": "tsc --noEmit",
+    "pack:dry-run": "npm pack --dry-run --json"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
