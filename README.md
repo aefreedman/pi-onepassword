@@ -100,40 +100,16 @@ npm run pack:dry-run
 Run this repository-only check **outside a Pi/model session**, in a fresh PowerShell 7 shell. It launches the fixed sibling `pi-codecks` identity client through `op run`; it is not packed and has no child-path, URL, request, or credential-selection argument. It writes exactly one redacted JSON outcome. Do not use a direct `op read` command or print any supplied value.
 
 ```powershell
-# Run from the pi-onepassword repository in a fresh PowerShell 7 process.
-$processScope = [EnvironmentVariableTarget]::Process
-$names = @(
-    'PI_ONEPASSWORD_OP_EXECUTABLE',
-    'PI_ONEPASSWORD_CODECKS_ACCOUNT',
-    'PI_ONEPASSWORD_CODECKS_REFERENCE',
-    'OP_SERVICE_ACCOUNT_TOKEN'
-)
-$previous = @{}
-foreach ($name in $names) {
-    $previous[$name] = [Environment]::GetEnvironmentVariable($name, $processScope)
-}
-$hadServiceAccountToken = -not [string]::IsNullOrWhiteSpace($previous['OP_SERVICE_ACCOUNT_TOKEN'])
-try {
-    $opExecutable = (Get-Command op).Source
-    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_OP_EXECUTABLE', $opExecutable, $processScope)
-    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_CODECKS_ACCOUNT', (Read-Host -Prompt 'Codecks account' -MaskInput), $processScope)
-    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_CODECKS_REFERENCE', (Read-Host -Prompt '1Password reference' -MaskInput), $processScope)
-
-    # Only prompt when a non-empty token was not already inherited by this shell.
-    if (-not $hadServiceAccountToken) {
-        [Environment]::SetEnvironmentVariable('OP_SERVICE_ACCOUNT_TOKEN', (Read-Host -Prompt '1Password service-account token' -MaskInput), $processScope)
-    }
-
-    npm run --silent live:codecks-readonly-auth
-}
-finally {
-    foreach ($name in $names) {
-        [Environment]::SetEnvironmentVariable($name, $previous[$name], $processScope)
-    }
-}
+pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1
 ```
 
-PowerShell 7 `Read-Host -MaskInput` returns a masked plain string, so no SecureString conversion is needed. The account, reference, and token are never printed. The launcher internally strips ambient 1Password Connect/session credentials and ambient Codecks credentials before the fixed child runs. Snapshot and cleanup use the current-process environment scope only, preserving inherited values and never changing user, machine, or other global environment settings.
+The wrapper locates `op` and Node, reuses non-empty process-, user-, or machine-level values for `PI_ONEPASSWORD_CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN`, and prompts with masked input only for missing values. Use `-PromptForServiceAccountToken` to override a stale inherited service-account token without placing it in command history:
+
+```powershell
+pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1 -PromptForServiceAccountToken
+```
+
+The wrapper suppresses vendor output and writes one redacted JSON report containing only fixed status values and exit codes. It verifies 1Password service-account authentication, non-disclosing reference injection, and the fixed Codecks identity operation. The account, reference, resolved Codecks token, service-account token, and executable paths are never printed. It temporarily removes conflicting 1Password Connect/session inputs, snapshots and restores every process-scope value it changes, and never mutates user- or machine-level environment settings.
 
 ### Behavioral-validation boundary
 
