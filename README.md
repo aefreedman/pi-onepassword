@@ -95,6 +95,46 @@ npm run pack:dry-run
 
 `pack:smoke` creates a tarball, installs it offline into a credential-free neutral temporary project, and imports the installed Bash extension, Codecks adapter, and trusted helpers through a fake local `op` process. It does not import a sibling Pi package or contact a network/account. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
 
+### Live Codecks read-only authentication check
+
+Run this repository-only check **outside a Pi/model session**, in a fresh PowerShell 7 shell. It launches the fixed sibling `pi-codecks` identity client through `op run`; it is not packed and has no child-path, URL, request, or credential-selection argument. It writes exactly one redacted JSON outcome. Do not use a direct `op read` command or print any supplied value.
+
+```powershell
+# Run from the pi-onepassword repository in a fresh PowerShell 7 process.
+$processScope = [EnvironmentVariableTarget]::Process
+$names = @(
+    'PI_ONEPASSWORD_OP_EXECUTABLE',
+    'PI_ONEPASSWORD_CODECKS_ACCOUNT',
+    'PI_ONEPASSWORD_CODECKS_REFERENCE',
+    'OP_SERVICE_ACCOUNT_TOKEN'
+)
+$previous = @{}
+foreach ($name in $names) {
+    $previous[$name] = [Environment]::GetEnvironmentVariable($name, $processScope)
+}
+$hadServiceAccountToken = -not [string]::IsNullOrWhiteSpace($previous['OP_SERVICE_ACCOUNT_TOKEN'])
+try {
+    $opExecutable = (Get-Command op).Source
+    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_OP_EXECUTABLE', $opExecutable, $processScope)
+    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_CODECKS_ACCOUNT', (Read-Host -Prompt 'Codecks account' -MaskInput), $processScope)
+    [Environment]::SetEnvironmentVariable('PI_ONEPASSWORD_CODECKS_REFERENCE', (Read-Host -Prompt '1Password reference' -MaskInput), $processScope)
+
+    # Only prompt when a non-empty token was not already inherited by this shell.
+    if (-not $hadServiceAccountToken) {
+        [Environment]::SetEnvironmentVariable('OP_SERVICE_ACCOUNT_TOKEN', (Read-Host -Prompt '1Password service-account token' -MaskInput), $processScope)
+    }
+
+    npm run --silent live:codecks-readonly-auth
+}
+finally {
+    foreach ($name in $names) {
+        [Environment]::SetEnvironmentVariable($name, $previous[$name], $processScope)
+    }
+}
+```
+
+PowerShell 7 `Read-Host -MaskInput` returns a masked plain string, so no SecureString conversion is needed. The account, reference, and token are never printed. The launcher internally strips ambient 1Password Connect/session credentials and ambient Codecks credentials before the fixed child runs. Snapshot and cleanup use the current-process environment scope only, preserving inherited values and never changing user, machine, or other global environment settings.
+
 ### Behavioral-validation boundary
 
 This package intentionally registers no model-facing secret-consuming tool, skill, prompt, or configuration subsystem: its only Pi registration is the Bash safety extension. Therefore provider-backed agent behavior is not a meaningful or available validation target. Deterministic tests instead enforce the code/tool contracts that exist: fixed operation-specific helpers, reference-only configuration, explicit service-account selection and fail-closed absence, redacted results, and Bash sanitization. A consumer package that registers a model-facing operation must validate its own agent behavior and confirmation policy.
