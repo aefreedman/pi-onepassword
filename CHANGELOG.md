@@ -7,6 +7,7 @@
 - Replaced the ambient 1Password read helper with trusted, fixed-child `op run` contracts that require an explicit service-account token and absolute executables.
 - Added bounded cancellation, timeout, output-limit, and non-secret error handling for trusted `op run` invocations.
 - Made Bash credential sanitization case-insensitive across all platforms.
+- Added a deterministic loopback fake authenticated identity check that exercises the trusted `op run` path and returns only bounded redacted outcome, status, and timing data.
 
 ## 0.1.3 - 2026-07-24
 

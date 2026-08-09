@@ -31,7 +31,8 @@ export type BoundedExecutionLimits = Readonly<{
 
 export type PublicOpRunResult = Readonly<{
   operation: "op-run";
-  exitCode: 0;
+  /** A fixed, allowlisted child outcome; never child output. */
+  exitCode: number;
 }>;
 
 export type OnePasswordOperationErrorCode =
@@ -65,6 +66,8 @@ export type RunBoundedOpRunInput = Readonly<{
   limits?: Partial<BoundedExecutionLimits>;
   signal?: AbortSignal;
   spawnProcess?: SpawnBoundedProcess;
+  /** Fixed non-secret child outcomes an operation intentionally exposes. */
+  acceptedExitCodes?: readonly number[];
 }>;
 
 /**
@@ -173,6 +176,7 @@ export function createServiceAccountInvocationEnvironment(
  */
 export async function runBoundedOpRun(input: RunBoundedOpRunInput): Promise<PublicOpRunResult> {
   const limits = normalizeLimits(input.limits);
+  const acceptedExitCodes = normalizeAcceptedExitCodes(input.acceptedExitCodes);
   const opExecutable = validateTrustedExecutable(input.opExecutable);
   const fixedChild = createFixedChildContract(input.child);
   const reference = validateSecretReference(input.reference);
@@ -207,11 +211,19 @@ export async function runBoundedOpRun(input: RunBoundedOpRunInput): Promise<Publ
     throw new OnePasswordOperationError("failed");
   }
 
-  return await awaitBoundedChild(child, limits, input.signal);
+  return await awaitBoundedChild(child, limits, input.signal, acceptedExitCodes);
 }
 
 function defaultSpawn(executable: string, args: readonly string[], options: SpawnOptions): ChildProcess {
   return spawn(executable, args, options);
+}
+
+function normalizeAcceptedExitCodes(values: readonly number[] | undefined): readonly number[] {
+  const codes = values === undefined ? [0] : [...new Set(values)];
+  if (!codes.length || codes.length > 8 || codes.some((code) => !Number.isSafeInteger(code) || code < 0 || code > 255)) {
+    throw new OnePasswordOperationError("invalid-configuration");
+  }
+  return Object.freeze(codes);
 }
 
 function normalizeLimits(overrides: Partial<BoundedExecutionLimits> | undefined): BoundedExecutionLimits {
@@ -228,6 +240,7 @@ function awaitBoundedChild(
   child: ChildProcess,
   limits: BoundedExecutionLimits,
   signal: AbortSignal | undefined,
+  acceptedExitCodes: readonly number[],
 ): Promise<PublicOpRunResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -277,9 +290,20 @@ function awaitBoundedChild(
     child.once("error", () => finish(new OnePasswordOperationError(failure ?? "failed")));
     child.once("close", (code) => {
       if (failure) finish(new OnePasswordOperationError(failure));
-      else if (code === 0) finish();
-      else finish(new OnePasswordOperationError("failed"));
+      else if (typeof code === "number" && acceptedExitCodes.includes(code)) {
+        finishResult(code);
+      } else finish(new OnePasswordOperationError("failed"));
     });
+
+    function finishResult(exitCode: number): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(terminationDeadline);
+      signal?.removeEventListener("abort", abort);
+      releaseLocalHandles(child);
+      resolve({ operation: "op-run", exitCode });
+    }
     signal?.addEventListener("abort", abort, { once: true });
   });
 }

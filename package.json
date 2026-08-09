@@ -12,7 +12,7 @@
     ]
   },
   "scripts": {
-    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts",
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
