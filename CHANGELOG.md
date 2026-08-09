@@ -4,7 +4,10 @@
 
 ### Changed
 
-- Replaced the ambient 1Password read helper with trusted, fixed-child `op run` contracts that require an explicit service-account token and absolute executables.
+- Removed the deleted ambient-identity `onepassword-read.ts` and `AGENT_OP_ALLOWED_VAULTS` authorization model; least-privilege service-account grants now define the maximum accessible 1Password scope.
+- Simplified the Bash lexical guard to block command text mentioning `op` or `op://...`, rather than claiming to prove an invocation; removed obsolete `op-read-allowlist.sh` special handling and documented/tested both false-positive and runtime-construction-bypass limits.
+- Rewrote public guidance to distinguish references from plaintext, trusted integration helpers from model-facing tools, server-enforced service-account grants from package checks, and trusted user-level configuration from OS isolation. The guidance now states that the reference and service-account token go only to the trusted 1Password invocation, which resolves the reference before the fixed child receives plaintext solely in its designated environment variable. Added credential-free, non-destructive integration-author migration guidance without claiming a drop-in configuration loader, raw-reader replacement, or model-facing migration endpoint.
+- Replaced the ambient 1Password read helper with trusted, fixed-child `op run` contracts that require an explicit service-account token from a trusted launcher (not argv, history, or persisted project configuration) and absolute executables.
 - Added bounded cancellation, timeout, output-limit, and non-secret error handling for trusted `op run` invocations.
 - Made Bash credential sanitization case-insensitive across all platforms.
 - Added a deterministic loopback fake authenticated identity check that exercises the trusted `op run` path and returns only bounded redacted outcome, status, and timing data.

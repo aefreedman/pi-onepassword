@@ -1,4 +1,6 @@
-# Phase 1 Transport Decision
+# Historical Phase 1 Transport Decision
+
+> **Historical implementation record, not configuration guidance.** This credential-free decision record explains the rebuild work completed at the time. Use `README.md` for current public guidance.
 
 ## Status: complete
 

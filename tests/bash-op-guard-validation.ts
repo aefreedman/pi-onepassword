@@ -23,7 +23,6 @@ const main = (): void => {
   expectBlocked("cmd /c \"op read foo\"");
   expectBlocked("pwsh -command \"op read foo\"");
   expectBlocked("echo op://Automation/item/field");
-  expectBlocked("./scripts/op-read-allowlist.sh foo");
   expectBlocked("find . -exec op read foo \\;");
   expectBlocked("printf '%s\\n' foo | xargs op read");
 

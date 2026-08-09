@@ -1,6 +1,6 @@
-# Phase 0 Legacy Characterization
+# Historical Phase 0 Legacy Characterization
 
-This is a credential-free baseline recorded before the least-privilege rebuild.
+> **Historical record, not current guidance.** This credential-free baseline was recorded before the least-privilege rebuild. It documents behavior that has been removed and must not be used as configuration or security guidance for the current package.
 
 - Baseline package commit: `18a24f630f55b5fbbe5c5569651bedcd0b92df84` (`18a24f6 Release v0.1.3`).
 - Package: `@aefree/pi-onepassword` version `0.1.3`; observed Pi CLI: `0.84.1`.

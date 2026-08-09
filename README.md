@@ -1,45 +1,76 @@
 # Pi OnePassword
 
-Least-privilege 1Password helpers and Bash safety policy for trusted Pi extensions.
+Least-privilege 1Password support for **trusted Pi integrations**, plus defense-in-depth protection for generic Pi Bash processes.
 
-## Purpose
+## What this package does
 
-This package keeps 1Password credentials out of generic Pi Bash subprocesses and provides small, package-owned helpers for trusted integrations. It is not a model-facing secret reader and does not provide process isolation from Pi, installed extensions, or other code running as the same operating-system user.
+This package provides package-owned helpers for a fixed, trusted integration to use a configured 1Password reference without returning its resolved value to the model. It also removes 1Password service-account, Connect, and session credentials from generic Pi Bash child environments.
 
-## Trusted integration contracts
+It does **not** register a general-purpose secret reader, raw-secret tool, arbitrary command runner, or general HTTP/Bearer-token client.
 
-`extensions/shared/onepassword-trusted.ts` is for trusted extension code only:
+### References are not plaintext
 
-- `validateSecretReference()` accepts a syntactically valid `op://...` identifier without resolving it.
-- `validateTrustedExecutable()` requires an absolute, trusted CLI or child executable; it never falls back to `PATH`.
-- `createFixedChildContract()` defines a fixed child executable, fixed arguments, and a reference environment binding. It rejects references in child arguments.
-- `createServiceAccountInvocationEnvironment()` explicitly sets `OP_SERVICE_ACCOUNT_TOKEN` and removes conflicting service-account, Connect, and session inputs case-insensitively.
-- `runBoundedOpRun()` invokes `op run -- <fixed trusted child>` with cancellation, timeout, and output limits. It discards child output and reports only normalized, non-secret results and errors. A caller may allowlist a few fixed non-secret exit codes for an operation-specific result.
-- `runFixedAuthenticatedReadCheck()` is the deterministic Phase 3 integration: it invokes a package-owned child through the production `op run` helper, sends only `GET /v1/identity` to its fixed loopback fake service, and returns only an operation name, category, status class, and bounded timing. It accepts no model-selected URL, HTTP method, executable, operation, token, or raw secret argument.
+An `op://...` value is a **reference**: an identifier for a 1Password value. It can be held in trusted user-level integration configuration or passed to a trusted helper without being the credential itself. Vault, item, and field names may still be sensitive metadata, so treat references appropriately.
 
-Provide the service-account token through a trusted launcher or user environment, not package or project configuration. Give that dedicated service account only the vault access and actions needed by the fixed integration. References identify a value but are not a security boundary by themselves.
+**Plaintext** is the value produced when 1Password resolves a reference. Plaintext must not appear in model prompts, tool arguments or results, session history, project files, command text or arguments, diagnostics, logs, tests, or fixtures. The reference and service-account token are supplied only to the trusted 1Password invocation. Its fixed `op run -- <trusted child>` contract resolves the reference, then the fixed trusted child receives plaintext only through its designated environment variable; the reference itself does not reach that consumer. Public results contain only fixed outcome categories, status, and bounded timing.
 
-No helper resolves or returns a referenced secret value. The fixed authenticated-read integration is intentionally not registered as a Pi tool: it exists solely to prove the fake-backed boundary.
+## Trust and authorization model
 
-### Codecks read-only authentication
+### Trusted integration helpers, not model-facing tools
 
-`runCodecksReadonlyAuthCheck()` is the first real consumer contract. `pi-onepassword` owns only the explicit service-account environment, configured reference injection, Codecks-credential environment stripping, and bounded `op run` execution. Its trusted user-level configuration supplies absolute `opExecutable` and `trustedCodecksClientExecutable` paths, a reference, and safe account metadata; no model-facing tool or API accepts that configuration.
+`extensions/shared/onepassword-trusted.ts` and the operation-specific helpers are APIs for deliberately trusted extension code. They require:
 
-`pi-codecks` owns the child protocol and exports `resolveCodecksReadonlyAuthClientExecutable()` to resolve its no-argument child from its own `import.meta.url`. That child accepts only `PI_CODECKS_READONLY_AUTH_ACCOUNT` and the injected `PI_CODECKS_READONLY_AUTH_TOKEN`, then performs its fixed official `POST https://api.codecks.io/` logged-in-user query. It never uses an API-base override, dispatches a mutation, or returns a token, reference, raw body, account, or URL. Its fixed exit categories map to this helper's bounded operation/category/status/timing result: authenticated, authentication-rejected, malformed-response, response-too-large, invalid-configuration, or unavailable; local timeout, cancellation, output-limit, and missing-service-account failures remain separately categorized.
+- an absolute trusted 1Password executable and absolute fixed child executable; never `PATH` lookup;
+- a configured reference bound only through a fixed child environment variable, never child arguments;
+- an explicitly supplied `OP_SERVICE_ACCOUNT_TOKEN`; conflicting service-account, Connect, and session inputs are removed case-insensitively before invocation; and
+- a fixed child, arguments, destination, and operation that return only redacted results.
 
-**Residual boundary:** this unreleased, separately installed pair has no stable shared runtime export that `pi-onepassword` can import without adding premature release coupling. `pi-onepassword` therefore validates `trustedCodecksClientExecutable` only as an absolute trusted user-level path; it cannot prove the path names the `pi-codecks` child. The launcher/user that supplies that path is the remaining trust boundary. Account-backed use is optional and separately authorized. The compatibility test uses fake `op` and Codecks-child implementations only; it makes no external request.
+A model-facing integration must offer a complete fixed operation, not accept an arbitrary reference, executable, destination, operation, or request payload merely because it needs a credential. No helper returns a resolved secret value.
 
-This is a trusted-package API, not a registered Pi tool or a general HTTP/Bearer-token client. Registering any user-facing integration requires a separately agreed fixed consumer contract and trusted user-level configuration; it must not accept arbitrary destinations or credentials.
+### Service-account grants are the authority boundary
 
-## Bash guard
+Use a separate, least-privilege 1Password service account for each meaningful automation trust domain. Its server-enforced vault and action grants define the maximum authority; package checks and logical reference aliases do not grant access or replace those grants. Missing service-account configuration fails without falling back to a personal, Connect, or session identity.
 
-The Pi Bash extension blocks obvious `op` and `op://...` usage and strips service-account, Connect-token, and session credentials from Bash child environments. Credential-name matching is case-insensitive on all platforms, including Windows.
+Provide the service-account token through a trusted launcher or user environment. Do not put it in package configuration, project configuration, source files, prompts, or command arguments.
 
-The command-text block is accidental-use prevention only. Shell runtime construction can bypass lexical detection, so it is not an authorization or isolation boundary.
+### Trusted user-level configuration is not OS isolation
+
+Trusted user-level configuration may hold an absolute executable path, a reference or logical binding, and fixed non-secret operation metadata. It is part of this package's trusted computing base: it must not be model-controlled or project-selected. It is **not** protected from arbitrary modification by the same operating-system user and is not an OS sandbox.
+
+Likewise, this package trusts the Pi host, intentionally installed extensions, the configured executable, and the OS user. It cannot protect against malicious trusted extensions, same-user process inspection/debugging/memory access, a compromised OS account, or separately installed personal 1Password facilities.
+
+## Available fixed contracts
+
+- `runBoundedOpRun()` is the internal bounded fixed-child primitive. It discards child output, bounds cancellation, timeout, and output, and exposes only fixed accepted exit categories.
+- `runFixedAuthenticatedReadCheck()` is a deterministic package test boundary, not a registered tool. Its package-owned child makes only `GET /v1/identity` to a literal loopback fake service.
+- `runCodecksReadonlyAuthCheck()` is a trusted API for the separately owned `pi-codecks` no-argument read-only identity child. Trusted user-level configuration supplies the absolute 1Password and Codecks child paths, configured reference, and safe account metadata. `pi-onepassword` injects the reference and service-account identity, strips ambient Codecks credential variables, and maps only fixed exit categories to a redacted result.
+
+The Codecks child path is trusted user-level configuration because these unreleased packages have no shared released runtime contract. This package validates it is absolute but cannot prove its package origin. Account-backed validation is optional and separately authorized; the compatibility test uses inert fakes only.
+
+## Bash defense in depth
+
+The Pi Bash extension removes `OP_SERVICE_ACCOUNT_TOKEN` (including suffixed forms), `OP_CONNECT_TOKEN`, and `OP_SESSION` (including suffixed forms) from generic Bash child environments. Matching is case-insensitive on every platform, including Windows.
+
+It also blocks Bash command text that mentions `op` or `op://...`. This lexical check is accidental-use prevention only, not proof that an invocation would occur and not an authorization or isolation boundary: shell runtime construction can bypass it, while harmless text can produce false positives. Do not rely on the guard to contain a determined command or other same-user code.
+
+## Migration from the legacy helper and allowlist
+
+This migration is non-destructive. It never requires revealing, reading, copying, printing, or persisting an existing credential. There is no drop-in configuration loader, raw-reader replacement, or model-facing migration endpoint in this package; do not treat these helpers as one.
+
+For each integration author, use this credential-free recipe:
+
+1. Define the consumer-owned trusted user-level configuration contract: an absolute 1Password executable path, an absolute fixed child executable path, a reference (or approved logical binding), the child's designated reference environment-variable name, and fixed non-secret child metadata. Keep that configuration user-level and trusted, never model-controlled or project-selected.
+2. Validate those inputs with the existing `validateTrustedExecutable()` and `validateSecretReference()` helpers, then construct the fixed child with `createFixedChildContract()`. Call `runBoundedOpRun()` only from the consumer's operation-specific adapter, with its fixed child, arguments, destination, accepted exit categories, and redacted public result. The reference and service-account token go to the trusted 1Password invocation; `op run` resolves the reference and supplies plaintext only to the child's designated environment variable.
+3. Have the trusted launcher supply `OP_SERVICE_ACCOUNT_TOKEN` to that invocation. It must not put the token in argv, shell history, project configuration, package configuration, source files, prompts, or persisted project data. Have the 1Password administrator create or select a dedicated least-privilege service account whose server-side grants are the authorization boundary.
+4. Do not retire a legacy consumer's ambient-identity or allowlist usage until that consumer has its own operation-specific adapter. Do not replace it with a model-facing `op read` call or plaintext-returning wrapper. No migration command needs to contact a vault or inspect existing values.
+
+## Non-goals
+
+This package does not provide a broker, daemon, privileged helper, IPC protocol, custom authorization lease, OS-level sandbox, personal-identity manager, general-purpose 1Password CLI replacement, live vault administration, or a model-facing raw-secret reader.
 
 ## Install
 
-Recommended as a global package.
+Recommended as a global package:
 
 ```bash
 pi install git:git@github.com:aefreedman/pi-onepassword.git
@@ -59,7 +90,7 @@ npm run typecheck
 npm run pack:dry-run
 ```
 
-All package tests use inert fakes. The authenticated-read test starts an in-process loopback-only fake service; it does not contact 1Password, an external network, or an account.
+All package tests use inert fakes. The authenticated-read test starts an in-process loopback-only fake service; it does not contact 1Password, an external network, or an account. Historical characterization records under `tests/` describe the pre-rebuild behavior only; they are not current configuration or security guidance.
 
 ## License
 
