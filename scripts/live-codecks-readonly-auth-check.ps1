@@ -44,6 +44,23 @@ function Set-ProcessEnvironmentValue {
     [Environment]::SetEnvironmentVariable($Name, $Value, $processScope)
 }
 
+function Normalize-CopiedSecretReference {
+    param([Parameter(Mandatory)][string]$Value)
+
+    $trimmed = $Value.Trim()
+    if ($trimmed.Length -ge 2) {
+        $first = $trimmed[0]
+        $last = $trimmed[$trimmed.Length - 1]
+        if (
+            ($first -eq [char]34 -and $last -eq [char]34) -or
+            ($first -eq [char]39 -and $last -eq [char]39)
+        ) {
+            return $trimmed.Substring(1, $trimmed.Length - 2).Trim()
+        }
+    }
+    return $trimmed
+}
+
 try {
     $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     Push-Location $repositoryRoot
@@ -87,6 +104,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($reference)) {
         $reference = Read-Host 'Codecks token op:// reference' -MaskInput
     }
+    $reference = Normalize-CopiedSecretReference -Value $reference
     Set-ProcessEnvironmentValue -Name 'PI_ONEPASSWORD_CODECKS_REFERENCE' -Value $reference
 
     $serviceAccountToken = if ($PromptForServiceAccountToken) {

@@ -87,7 +87,7 @@ function readConfiguration(environment: NodeJS.ProcessEnv): CodecksReadonlyAuthC
     trustedCodecksClientExecutable: validateTrustedUserConfiguredCodecksClientExecutable(CODECKS_CLIENT),
     account,
     opExecutable: validateTrustedExecutable(String(environment[OP_EXECUTABLE_ENV] ?? "")),
-    reference: validateSecretReference(String(environment[CODECKS_REFERENCE_ENV] ?? "")),
+    reference: validateSecretReference(normalizeCopiedSecretReference(String(environment[CODECKS_REFERENCE_ENV] ?? ""))),
     serviceAccountToken,
   };
 }
@@ -106,6 +106,16 @@ function fixedOutput(category: PublicOutcomeCategory, durationMs: number): LiveC
 
 function isValidCodecksAccount(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value);
+}
+
+function normalizeCopiedSecretReference(value: string): string {
+  const trimmed = value.trim();
+  const first = trimmed.at(0);
+  const last = trimmed.at(-1);
+  if (trimmed.length >= 2 && (first === '"' && last === '"' || first === "'" && last === "'")) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
 }
 
 function elapsed(startedAt: number): number {

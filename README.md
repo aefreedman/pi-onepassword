@@ -103,7 +103,7 @@ Run this repository-only check **outside a Pi/model session**, in a fresh PowerS
 pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1
 ```
 
-The wrapper locates `op` and Node, reuses non-empty process-, user-, or machine-level values for `PI_ONEPASSWORD_CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN`, and prompts with masked input only for missing values. Use `-PromptForServiceAccountToken` to override a stale inherited service-account token without placing it in command history:
+The wrapper locates `op` and Node, reuses non-empty process-, user-, or machine-level values for `PI_ONEPASSWORD_CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN`, and prompts with masked input only for missing values. References copied with one matching outer pair of straight single or double quotes are normalized before validation and resolution. Use `-PromptForServiceAccountToken` to override a stale inherited service-account token without placing it in command history:
 
 ```powershell
 pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1 -PromptForServiceAccountToken

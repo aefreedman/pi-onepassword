@@ -55,6 +55,20 @@ assert.equal(observedCheck?.serviceAccountToken, token, "Expected inherited serv
 assert.equal(observedCheck?.trustedCodecksClientExecutable, clientPath, "Expected the fixed sibling Codecks client path.");
 assertPublicOutput(success.output, success.line, "successful wiring");
 
+for (const copiedReference of [`"${reference}"`, `'${reference}'`]) {
+  let normalizedReference: string | undefined;
+  const quoted = await run({
+    environment: { ...environment(), PI_ONEPASSWORD_CODECKS_REFERENCE: copiedReference },
+    runCheck: async (check) => {
+      normalizedReference = check.reference;
+      return result("authenticated", "success");
+    },
+  });
+  assert.equal(quoted.exitCode, 0, "Expected a copied reference with matching outer quotes to be accepted.");
+  assert.equal(normalizedReference, reference, "Expected one matching outer quote pair to be removed.");
+  assertPublicOutput(quoted.output, quoted.line, "quoted copied reference");
+}
+
 let invocation: { executable: string; args: readonly string[]; options: SpawnOptions } | undefined;
 const fakeChild = createExitZeroChild();
 const defaultHelper = await run({
@@ -92,6 +106,7 @@ for (const invalidEnvironment of [
   { ...environment(), ["PI_ONEPASSWORD_OP_EXECUTABLE"]: "op" },
   { ...environment(), ["PI_ONEPASSWORD_CODECKS_ACCOUNT"]: "account-sentinel!" },
   { ...environment(), ["PI_ONEPASSWORD_CODECKS_REFERENCE"]: "reference-SENTINEL-not-valid" },
+  { ...environment(), ["PI_ONEPASSWORD_CODECKS_REFERENCE"]: `"${reference}'` },
   { ...environment(), OP_SERVICE_ACCOUNT_TOKEN: "   " },
 ]) {
   const invalid = await run({ environment: invalidEnvironment, runCheck: async () => { throw new Error("must not run"); } });
