@@ -1,8 +1,15 @@
+param(
+    [string]$PiCodecksPackagePath
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 function Start-PiCodecksExternalHelper {
+    param(
+        [string]$PiCodecksPackagePath
+    )
     $processScope = [EnvironmentVariableTarget]::Process
     # POSIX retains each ordinal spelling, while Windows has one logical,
     # case-insensitive process key. The latter prevents a canonical alias from
@@ -121,6 +128,45 @@ function Start-PiCodecksExternalHelper {
         $adapterPath = Join-Path $repositoryRoot 'extensions/integrations/codecks-credential-helper.mjs'
         if (-not (Test-Path -LiteralPath $adapterPath -PathType Leaf)) { throw 'Required local adapter is unavailable.' }
         $adapterPath = (Resolve-Path -LiteralPath $adapterPath).Path
+
+        $candidatePackagePath = if (-not $PSBoundParameters.ContainsKey('PiCodecksPackagePath')) {
+            Join-Path $repositoryRoot '../pi-codecks'
+        }
+        else {
+            if ([string]::IsNullOrWhiteSpace($PiCodecksPackagePath) -or -not [IO.Path]::IsPathFullyQualified($PiCodecksPackagePath)) {
+                throw 'The explicit pi-codecks package path must be fully qualified.'
+            }
+            $PiCodecksPackagePath
+        }
+        if (-not (Test-Path -LiteralPath $candidatePackagePath -PathType Container)) { throw 'Required local pi-codecks package is unavailable.' }
+        $resolvedPackagePath = (Resolve-Path -LiteralPath $candidatePackagePath).Path
+        $packageManifestPath = Join-Path $resolvedPackagePath 'package.json'
+        if (-not (Test-Path -LiteralPath $packageManifestPath -PathType Leaf)) { throw 'Required local pi-codecks package manifest is unavailable.' }
+        try {
+            $packageManifest = Get-Content -LiteralPath $packageManifestPath -Raw | ConvertFrom-Json
+        }
+        catch {
+            throw 'Required local pi-codecks package manifest is invalid.'
+        }
+        $piProperty = $packageManifest.PSObject.Properties['pi']
+        $nameProperty = $packageManifest.PSObject.Properties['name']
+        $extensionsProperty = if ($null -eq $piProperty -or $null -eq $piProperty.Value) { $null } else { $piProperty.Value.PSObject.Properties['extensions'] }
+        if ($null -eq $nameProperty -or [string]$nameProperty.Value -ne '@aefree/pi-codecks' -or
+            $null -eq $extensionsProperty -or $extensionsProperty.Value -is [string]) {
+            throw 'Required local pi-codecks package manifest is invalid.'
+        }
+        $extensionEntries = @($extensionsProperty.Value)
+        if ($extensionEntries.Count -eq 0) { throw 'Required local pi-codecks package does not expose a Pi extension.' }
+        foreach ($extensionEntry in $extensionEntries) {
+            if ($extensionEntry -isnot [string] -or [string]::IsNullOrWhiteSpace($extensionEntry) -or
+                -not $extensionEntry.StartsWith('./', [StringComparison]::Ordinal) -or
+                $extensionEntry -match '(^|[\\/])\.\.([\\/]|$)' -or
+                [Management.Automation.WildcardPattern]::ContainsWildcardCharacters($extensionEntry) -or
+                -not (Test-Path -LiteralPath (Join-Path $resolvedPackagePath $extensionEntry))) {
+                throw 'Required local pi-codecks package manifest is invalid.'
+            }
+        }
+
         $opExecutable = Resolve-TrustedPathApplication -Name 'op'
         $piExecutable = Resolve-TrustedPathApplication -Name 'pi'
 
@@ -170,8 +216,11 @@ function Start-PiCodecksExternalHelper {
             }
         }
 
-        # No model-facing arguments or validation acknowledgement are supplied;
-        # no redirected handles means Pi remains interactive in this terminal.
+        # Load the reviewed local development package for this run only. The
+        # package path is trusted, non-secret configuration; credentials remain
+        # environment-only. No redirected handles means Pi stays interactive.
+        $startInfo.ArgumentList.Add('--extension')
+        $startInfo.ArgumentList.Add($resolvedPackagePath)
         $piProcess = [System.Diagnostics.Process]::new()
         $piProcess.StartInfo = $startInfo
         if (-not $piProcess.Start()) { throw 'Unable to start Pi.' }
@@ -186,5 +235,8 @@ function Start-PiCodecksExternalHelper {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
+    if ($PSBoundParameters.ContainsKey('PiCodecksPackagePath')) {
+        exit (Start-PiCodecksExternalHelper -PiCodecksPackagePath $PiCodecksPackagePath)
+    }
     exit (Start-PiCodecksExternalHelper)
 }

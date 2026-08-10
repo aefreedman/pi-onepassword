@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const codecksPackagePath = path.resolve(repositoryRoot, "..", "pi-codecks");
 const launcherPath = path.join(repositoryRoot, "scripts", "start-pi-codecks-external-helper.ps1");
 const source = readFileSync(launcherPath, "utf8");
 const pwsh = process.env.PWSH_PATH ?? "pwsh";
@@ -14,9 +15,11 @@ const commandExtension = isWindows ? ".cmd" : "";
 const tempRoot = mkdtempSync(path.join(os.tmpdir(), "pi-onepassword-pi-launcher-validation-"));
 const binDir = path.join(tempRoot, "bin");
 const auditPath = path.join(tempRoot, "pi-environment.txt");
-const argsPath = path.join(tempRoot, "pi-arguments.txt");
+const argsPath = path.join(tempRoot, "pi-arguments.json");
+const promptAuditPath = path.join(tempRoot, "prompt-audit.txt");
 const fakeOp = path.join(binDir, `op${commandExtension}`);
 const fakePi = path.join(binDir, `pi${commandExtension}`);
+const fakePiHarness = path.join(binDir, "fake-pi.mjs");
 
 function quotePowerShell(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -25,10 +28,10 @@ function quotePowerShell(value: string): string {
 function cleanEnvironment(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(environment)) {
-    if (/^(?:OP_|PI_ONEPASSWORD_|CODECKS_|PI_CODECKS_)/i.test(key) || ["FAKE_AUDIT", "FAKE_ARGS", "FAKE_PI_EXIT"].includes(key)) delete environment[key];
+    if (/^(?:OP_|PI_ONEPASSWORD_|CODECKS_|PI_CODECKS_)/i.test(key) || ["FAKE_AUDIT", "FAKE_ARGS", "FAKE_PI_EXIT", "FAKE_PROMPT_AUDIT"].includes(key)) delete environment[key];
   }
   environment.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
-  return { ...environment, FAKE_AUDIT: auditPath, FAKE_ARGS: argsPath, ...overrides };
+  return { ...environment, FAKE_AUDIT: auditPath, FAKE_ARGS: argsPath, FAKE_PROMPT_AUDIT: promptAuditPath, ...overrides };
 }
 
 function runPowerShell(args: readonly string[], env: NodeJS.ProcessEnv) {
@@ -47,12 +50,13 @@ function mockedReadHostCommand(values: readonly string[]): string {
   return [
     "$global:mockedPromptValues = [System.Collections.Generic.Queue[string]]::new()",
     ...values.map((value) => `[void]$global:mockedPromptValues.Enqueue(${quotePowerShell(value)})`),
-    "function global:Read-Host { param([string]$Prompt, [switch]$MaskInput); if (-not $MaskInput) { throw 'Expected masked prompt.' }; return $global:mockedPromptValues.Dequeue() }",
+    "function global:Read-Host { param([string]$Prompt, [switch]$MaskInput); if (-not $MaskInput) { throw 'Expected masked prompt.' }; Add-Content -LiteralPath $env:FAKE_PROMPT_AUDIT -Value $Prompt; return $global:mockedPromptValues.Dequeue() }",
   ].join("; ");
 }
 
-function launch(values: Record<string, string>, prompts: readonly string[], exitCode = 0) {
-  const command = `${setProcessEnvironmentCommand(values)}; ${mockedReadHostCommand(prompts)}; & ${quotePowerShell(launcherPath)}; exit $LASTEXITCODE`;
+function launch(values: Record<string, string>, prompts: readonly string[], exitCode = 0, packagePath?: string) {
+  const packageArgument = packagePath === undefined ? "" : ` -PiCodecksPackagePath ${quotePowerShell(packagePath)}`;
+  const command = `${setProcessEnvironmentCommand(values)}; ${mockedReadHostCommand(prompts)}; & ${quotePowerShell(launcherPath)}${packageArgument}; exit $LASTEXITCODE`;
   return runPowerShell(["-Command", command], cleanEnvironment({ FAKE_PI_EXIT: String(exitCode) }));
 }
 
@@ -140,12 +144,19 @@ function restoreInPlace(values: Record<string, string>, names: readonly string[]
 
 try {
   mkdirSync(binDir, { recursive: true });
+  writeFileSync(fakePiHarness, [
+    'import { writeFileSync } from "node:fs";',
+    'writeFileSync(process.env.FAKE_AUDIT, Object.entries(process.env).map(([key, value]) => `${key}=${value ?? ""}`).join("\\n"));',
+    'writeFileSync(process.env.FAKE_ARGS, JSON.stringify(process.argv.slice(2)));',
+    'process.stdout.write("fake Pi started\\n");',
+    'process.exitCode = Number(process.env.FAKE_PI_EXIT ?? "0");',
+  ].join("\n"));
   if (isWindows) {
     writeFileSync(fakeOp, "@echo off\r\nexit /b 0\r\n");
-    writeFileSync(fakePi, "@echo off\r\nset > \"%FAKE_AUDIT%\"\r\n( echo %* ) > \"%FAKE_ARGS%\"\r\necho fake Pi started\r\nexit /b %FAKE_PI_EXIT%\r\n");
+    writeFileSync(fakePi, `@echo off\r\n"${process.execPath}" "%~dp0fake-pi.mjs" %*\r\n`);
   } else {
     writeFileSync(fakeOp, "#!/bin/sh\nexit 0\n");
-    writeFileSync(fakePi, "#!/bin/sh\nenv > \"$FAKE_AUDIT\"\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS\"\nprintf '%s\\n' 'fake Pi started'\nexit \"${FAKE_PI_EXIT:-0}\"\n");
+    writeFileSync(fakePi, `#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' "$(dirname "$0")/fake-pi.mjs" "$@"\n`);
     chmodSync(fakeOp, 0o755);
     chmodSync(fakePi, 0o755);
   }
@@ -188,7 +199,12 @@ try {
     assert.equal(success.stdout.includes(value), false, "launcher output must not expose prompted configuration");
     assert.equal(success.stderr.includes(value), false, "launcher diagnostics must not expose prompted configuration");
   }
-  assert.ok(["", "ECHO is off."].includes(readFileSync(argsPath, "utf8").trim()), "Pi must receive no launcher/model arguments");
+  const capturedArgumentsText = readFileSync(argsPath, "utf8");
+  const capturedArguments = JSON.parse(capturedArgumentsText) as string[];
+  assert.deepEqual(capturedArguments, ["--extension", codecksPackagePath], "Pi must load only the local development package with exact argument boundaries");
+  for (const value of [promptAccount, normalizedReference, serviceAccount]) {
+    assert.equal(capturedArgumentsText.includes(value), false, "Pi argv must not contain prompted configuration");
+  }
 
   const duringRun = capturedEnvironment();
   assert.deepEqual(valuesNamed(duringRun, "CODECKS_ACCOUNT"), [["CODECKS_ACCOUNT", promptAccount]]);
@@ -205,6 +221,27 @@ try {
   }
   assert.equal(readFileSync(argsPath, "utf8").includes(serviceAccount), false, "Pi argv must not contain the service token");
   assert.equal(readFileSync(argsPath, "utf8").includes(normalizedReference), false, "Pi argv must not contain the reference");
+
+  const assertInvalidPackageFailsBeforePromptOrPi = (candidatePath: string, label: string) => {
+    rmSync(auditPath, { force: true });
+    rmSync(promptAuditPath, { force: true });
+    const invalidPackage = launch(initial, [promptAccount, copiedReference, serviceAccount], 0, candidatePath);
+    assert.notEqual(invalidPackage.status, 0, `${label} must fail closed`);
+    assert.equal(existsSync(promptAuditPath), false, `${label} must fail before prompting`);
+    assert.equal(existsSync(auditPath), false, `${label} must fail before Pi starts`);
+  };
+  assertInvalidPackageFailsBeforePromptOrPi("", "a blank explicit package path");
+  assertInvalidPackageFailsBeforePromptOrPi("relative/pi-codecks", "a relative explicit package path");
+  if (isWindows) assertInvalidPackageFailsBeforePromptOrPi("\\relative-to-current-drive", "a drive-relative Windows package path");
+  assertInvalidPackageFailsBeforePromptOrPi(path.join(tempRoot, "missing-package"), "a missing local pi-codecks package");
+  const malformedPackage = path.join(tempRoot, "malformed-package");
+  mkdirSync(malformedPackage);
+  writeFileSync(path.join(malformedPackage, "package.json"), JSON.stringify({ name: "@aefree/pi-codecks", pi: { extensions: "./index.ts" } }));
+  assertInvalidPackageFailsBeforePromptOrPi(malformedPackage, "a malformed Pi package manifest");
+  const missingExtensionPackage = path.join(tempRoot, "missing-extension-package");
+  mkdirSync(missingExtensionPackage);
+  writeFileSync(path.join(missingExtensionPackage, "package.json"), JSON.stringify({ name: "@aefree/pi-codecks", pi: { extensions: ["./missing.ts"] } }));
+  assertInvalidPackageFailsBeforePromptOrPi(missingExtensionPackage, "a package manifest with a missing extension entry");
 
   const singleQuoted = launch(initial, [promptAccount, "  'op://Inert Single Quote/codecks/token'  ", serviceAccount]);
   assert.equal(singleQuoted.status, 0, "one matching outer single-quote pair must normalize");
@@ -287,7 +324,9 @@ try {
   assert.match(source, /Read-Host '1Password service-account token' -MaskInput/);
   assert.match(source, /Resolve-TrustedPathApplication -Name 'op'/);
   assert.match(source, /Resolve-TrustedPathApplication -Name 'pi'/);
-  assert.doesNotMatch(source, /PI_CODECKS_ALLOW_LIVE_VALIDATION' -Value|SetEnvironmentVariable\([^\n]+(?:User|Machine)/);
+  assert.match(source, /\$startInfo\.ArgumentList\.Add\('--extension'\)/);
+  assert.match(source, /\$startInfo\.ArgumentList\.Add\(\$resolvedPackagePath\)/);
+  assert.doesNotMatch(source, /\b(?:install|remove|update)\b[^\n]*pi-codecks|PI_CODECKS_ALLOW_LIVE_VALIDATION' -Value|SetEnvironmentVariable\([^\n]+(?:User|Machine)/);
   console.log("PASS: trusted interactive Pi Codecks launcher validation succeeded");
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
