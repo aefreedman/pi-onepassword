@@ -4,7 +4,7 @@ import path from "node:path";
 import { pack, packageRoot, runNpm } from "./package-archive.mjs";
 
 const ignoredDirectories = new Set([".git", "node_modules"]);
-const textExtensions = new Set([".ts", ".mts", ".cts", ".mjs", ".cjs", ".js", ".json", ".md", ".yml", ".yaml", ".txt", ".lock"]);
+const textExtensions = new Set([".ts", ".mts", ".cts", ".mjs", ".cjs", ".js", ".ps1", ".json", ".md", ".yml", ".yaml", ".txt", ".lock"]);
 const patterns = [
   { label: "private-key block", pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g },
   { label: "GitHub credential", pattern: /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}\b/g },

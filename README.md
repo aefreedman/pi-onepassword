@@ -124,6 +124,18 @@ The retained filename is a migration aid; it now configures the normal `pi-codec
 
 The wrapper sets and restores only process-scope configuration, strips conflicting 1Password Connect/session and ambient Codecks token/reference/provider variables case-insensitively, suppresses all child diagnostics, and emits exactly one redacted JSON object with `operation`, `status`, `category`, and `durationMs`. It accepts only the sibling launcher's fixed categories, including the pre-existing `authentication_rejected` category, rejects malformed or expanded child output, and clamps `durationMs` to `0..60000`; absent or invalid child output reports `invalid_configuration` with duration `0`. It preserves those categories unchanged, so an upstream identity-classification refinement requires no 1Password protocol or allowlist change. It never performs a preliminary `op` command, prints account/reference/token/path data, accepts model arguments, or changes user/machine environment settings. Missing local packages, adapter, configuration, or authentication fail closed.
 
+### Launch a normal Pi Codecks session
+
+The fixed identity validator can continue to report `authentication_rejected`; that category does not establish whether the token can make a normal Codecks read. To test the normal `pi-codecks` tool path (for example, `codecks_card_get`) in a **fresh interactive Pi process**, separately authorize the live test and run this trusted local source-checkout launcher from PowerShell 7:
+
+```powershell
+& 'C:\path\to\pi-onepassword\scripts\start-pi-codecks-external-helper.ps1'
+```
+
+It prompts once, with masked input, for the Codecks account slug, `op://` reference, and 1Password service-account token; a copied reference may have one matching outer straight quote pair. It resolves this checkout's fixed `extensions/integrations/codecks-credential-helper.mjs` adapter and the `op` and `pi` applications from the trusted local `PATH`, then starts `pi` with no arguments. The account, reference, and token are process-only child environment values, never Pi arguments, output, persisted configuration, or user/machine environment settings. It removes case-insensitive ambient direct Codecks, external-provider, 1Password Connect/session, and alternate service-token settings before launch, does not set `PI_CODECKS_ALLOW_LIVE_VALIDATION`, waits for Pi, returns Pi's exit code, and restores the invoking PowerShell process environment exactly.
+
+This is intentionally a repository-only setup script, not a packed runtime asset: use the source checkout path above rather than an installed package path. It registers no tool or operation and does not perform a preliminary `op` command, network request, identity check, or validation acknowledgement. Once Pi is open, use the normal consumer tool under that consumer's own confirmation and authorization policy.
+
 ### Behavioral-validation boundary
 
 This package intentionally registers no model-facing secret-consuming tool, skill, prompt, or configuration subsystem: its only Pi registration is the Bash safety extension. Therefore provider-backed agent behavior is not a meaningful or available validation target. Deterministic tests instead enforce the code/tool contracts that exist: fixed operation-specific helpers, reference-only configuration, explicit service-account selection and fail-closed absence, redacted results, and Bash sanitization. A consumer package that registers a model-facing operation must validate its own agent behavior and confirmation policy.
