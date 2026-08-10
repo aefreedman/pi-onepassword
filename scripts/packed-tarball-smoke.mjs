@@ -56,16 +56,25 @@ process.exit(0);
 `);
   writeFileSync(path.join(consumerDir, "run"), `
 const { spawn } = require("node:child_process");
-const [delimiter, child, ...args] = process.argv.slice(2);
+const launch = process.argv.slice(2);
+const [command, ...rest] = launch[0] === "run" ? launch : ["run", ...launch];
+const noMasking = rest[0] === "--no-masking";
+const [delimiter, child, ...args] = noMasking ? rest.slice(1) : rest;
 const serviceAccount = "inert-packed-" + "service-account-token";
-if (delimiter !== "--" || !child || process.env.OP_SERVICE_ACCOUNT_TOKEN !== serviceAccount) process.exit(64);
+if (command !== "run" || delimiter !== "--" || !child || process.env.OP_SERVICE_ACCOUNT_TOKEN !== serviceAccount) process.exit(64);
 if (process.env.CODECKS_TOKEN || process.env.PI_ONEPASSWORD_CODECKS_REFERENCE) process.exit(65);
 const env = { ...process.env, PI_ONEPASSWORD_CODECKS_CREDENTIAL: "inert-packed-codecks-credential" };
 delete env.OP_SERVICE_ACCOUNT_TOKEN;
 const launched = spawn(child, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-launched.stdout.pipe(process.stdout); launched.stderr.pipe(process.stderr);
+const stdout = [];
+launched.stdout.on("data", (chunk) => stdout.push(chunk));
+launched.stderr.pipe(process.stderr);
 launched.once("error", () => process.exit(66));
-launched.once("close", (code) => process.exit(code ?? 66));
+launched.once("close", (code) => {
+  const output = Buffer.concat(stdout).toString("utf8");
+  process.stdout.write(noMasking ? output : output.replaceAll("inert-packed-codecks-credential", "[REDACTED]"));
+  process.exit(code ?? 66);
+});
 `);
   writeFileSync(fixture, `
 import assert from "node:assert/strict";
@@ -90,6 +99,19 @@ const helperResult = await new Promise((resolve, reject) => {
   child.once("error", reject); child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error("packed credential helper failed")));
 });
 assert.deepEqual(helperResult, { stdout: '{"version":1,"credential":"inert-packed-codecks-credential"}', stderr: "" });
+assert.equal(helperResult.stderr, "", "private adapter protocol diagnostics must remain empty");
+assert.equal(helperResult.stdout.includes("[REDACTED]"), false, "the exact --no-masking adapter invocation must preserve the inert private-protocol credential rather than a masking placeholder");
+const defaultMasked = await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [process.cwd() + "/run", "--", process.execPath, "--input-type=module", "--eval", "process.stdout.write(JSON.stringify({version:1,credential:process.env.PI_ONEPASSWORD_CODECKS_CREDENTIAL}))"], {
+    env: { ...process.env, ["OP_" + "SERVICE_ACCOUNT_TOKEN"]: "inert-packed-" + "service-account-token" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = ""; let stderr = "";
+  child.stdout.on("data", (value) => { stdout += value; }); child.stderr.on("data", (value) => { stderr += value; });
+  child.once("error", reject); child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error("packed fake default masking failed")));
+});
+assert.deepEqual(defaultMasked, { stdout: '{"version":1,"credential":"[REDACTED]"}', stderr: "" }, "without --no-masking, packed fake op must mask the inert resolved value in stdout");
+assert.notDeepEqual(defaultMasked, helperResult, "a real-token protocol expectation must fail under default masking");
 assert.deepEqual(result, { operation: "op-run", exitCode: 0 });
 assert.equal(JSON.stringify(result).includes(token), false);
 assert.equal(JSON.stringify(result).includes(reference), false);

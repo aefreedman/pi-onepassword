@@ -70,21 +70,41 @@ try {
   // this generated script is an inert stand-in for `op run`, never a network client.
   writeFileSync(path.join(consumerDir, "run"), `
 const { spawn } = require("node:child_process");
-const [delimiter, child, ...args] = process.argv.slice(2);
-if (delimiter !== "--" || !child || process.env.OP_SERVICE_ACCOUNT_TOKEN !== "inert-packed-service-account") process.exit(64);
+const launch = process.argv.slice(2);
+const [command, ...rest] = launch[0] === "run" ? launch : ["run", ...launch];
+const noMasking = rest[0] === "--no-masking";
+const [delimiter, child, ...args] = noMasking ? rest.slice(1) : rest;
+if (command !== "run" || delimiter !== "--" || !child || process.env.OP_SERVICE_ACCOUNT_TOKEN !== "inert-packed-service-account") process.exit(64);
 if (process.env.CODECKS_TOKEN || process.env.CODECKS_API_TOKEN || process.env.CODECKS_CREDENTIAL_PROVIDER) process.exit(65);
 if (process.env.PACKED_FAKE_OP_MODE === "malformed") { process.stdout.write("not-json"); process.exit(0); }
 const env = { ...process.env, PI_ONEPASSWORD_CODECKS_CREDENTIAL: "inert-packed-provider-token" };
 delete env.OP_SERVICE_ACCOUNT_TOKEN;
 const launched = spawn(child, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-launched.stdout.pipe(process.stdout); launched.stderr.pipe(process.stderr);
+const stdout = [];
+launched.stdout.on("data", (chunk) => stdout.push(chunk));
+launched.stderr.pipe(process.stderr);
 launched.once("error", () => process.exit(66));
-launched.once("close", (code) => process.exit(code ?? 66));
+launched.once("close", (code) => {
+  const output = Buffer.concat(stdout).toString("utf8");
+  process.stdout.write(noMasking ? output : output.replaceAll("inert-packed-provider-token", "[REDACTED]"));
+  process.exit(code ?? 66);
+});
 `);
   const fixture = path.join(consumerDir, "composition.mjs");
   writeFileSync(fixture, `
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import * as productionCore from ${JSON.stringify(pathToFileURL(core).href)};
+const defaultMasked = await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [process.cwd() + "/run", "--", process.execPath, "--input-type=module", "--eval", "process.stdout.write(JSON.stringify({version:1,credential:process.env.PI_ONEPASSWORD_CODECKS_CREDENTIAL}))"], {
+    env: { ...process.env, ["OP_" + "SERVICE_ACCOUNT_TOKEN"]: "inert-packed-service-account" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = ""; let stderr = "";
+  child.stdout.on("data", (value) => { stdout += value; }); child.stderr.on("data", (value) => { stderr += value; });
+  child.once("error", reject); child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error("packed composition fake default masking failed")));
+});
+assert.deepEqual(defaultMasked, { stdout: '{"version":1,"credential":"[REDACTED]"}', stderr: "" }, "without --no-masking, composition fake op must mask the inert resolved value in stdout");
 process.env.CODECKS_ACCOUNT = "packed-composition-account";
 process.env.CODECKS_TOKEN = "ambient-token-that-must-not-be-used";
 process.env.CODECKS_CREDENTIAL_PROVIDER = "external-helper";

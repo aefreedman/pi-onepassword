@@ -18,6 +18,9 @@ const OP_REFERENCE_PREFIX = "op:" + "//";
 
 // This is deliberately a fixed current-Node program. It has no request-derived
 // arguments and can only receive the resolved value through its fixed binding.
+// `op run --no-masking` is required solely because this stdout is the private,
+// bounded adapter protocol read by trusted pi-codecks. The credential never
+// reaches argv, stderr, diagnostics, or any public/model-facing output.
 const FIXED_CHILD_SOURCE = `
 const credential = process.env.${REFERENCE_ENVIRONMENT_NAME};
 if (typeof credential !== "string" || credential.length === 0) process.exit(1);
@@ -272,7 +275,7 @@ function runOp(configuration, overall) {
       return;
     }
     try {
-      child = spawn(configuration.opExecutable, ["run", "--", process.execPath, "--input-type=module", "--eval", FIXED_CHILD_SOURCE], {
+      child = spawn(configuration.opExecutable, ["run", "--no-masking", "--", process.execPath, "--input-type=module", "--eval", FIXED_CHILD_SOURCE], {
         env: createInvocationEnvironment(configuration),
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",

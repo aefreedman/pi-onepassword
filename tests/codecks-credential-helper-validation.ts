@@ -18,10 +18,13 @@ writeFileSync(fakeSource, `#!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 const launch = process.argv.slice(2);
-const [command, delimiter, child, ...args] = launch[0] === "run" ? launch : ["run", ...launch];
+const [command, ...rest] = launch[0] === "run" ? launch : ["run", ...launch];
+const invocation = [command, ...rest];
+const noMasking = rest[0] === "--no-masking";
+const [delimiter, child, ...args] = noMasking ? rest.slice(1) : rest;
 const serviceAccount = "inert-" + "service-account-token";
 if (command !== "run" || delimiter !== "--" || !child || !args.includes("--input-type=module") || !args.includes("--eval") || process.env.OP_SERVICE_ACCOUNT_TOKEN !== serviceAccount) process.exit(64);
-if (process.env.TEST_TRACE_FILE) writeFileSync(process.env.TEST_TRACE_FILE, JSON.stringify({ child, args, names: Object.keys(process.env).sort() }));
+if (process.env.TEST_TRACE_FILE) writeFileSync(process.env.TEST_TRACE_FILE, JSON.stringify({ invocation, child, args, names: Object.keys(process.env).sort() }));
 const mode = process.env.TEST_MODE;
 if (mode === "malformed") { process.stdout.write("not-json"); process.exit(0); }
 if (mode === "extra") { process.stdout.write('{"version":1,"credential":"inert-codecks-credential-value"}x'); process.exit(0); }
@@ -32,9 +35,17 @@ if (mode === "hang") await new Promise(() => {});
 const env = { ...process.env, PI_ONEPASSWORD_CODECKS_CREDENTIAL: "inert-codecks-credential-value" };
 delete env.OP_SERVICE_ACCOUNT_TOKEN;
 const spawned = spawn(child, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-spawned.stdout.pipe(process.stdout); spawned.stderr.pipe(process.stderr);
+const stdout = [];
+spawned.stdout.on("data", (chunk) => stdout.push(chunk));
+spawned.stderr.pipe(process.stderr);
 spawned.once("error", () => process.exit(65));
-spawned.once("close", (code) => process.exit(code ?? 65));
+spawned.once("close", (code) => {
+  const output = Buffer.concat(stdout).toString("utf8");
+  // Match 1Password's default stdout masking: only this exact private-protocol
+  // opt-out may preserve the resolved value for the trusted adapter parent.
+  process.stdout.write(noMasking ? output : output.replaceAll("inert-codecks-credential-value", "[REDACTED]"));
+  process.exit(code ?? 65);
+});
 `);
 writeFileSync(runner, readFileSync(fakeSource));
 chmodSync(runner, 0o755);
@@ -69,6 +80,21 @@ function invoke(request: unknown, overrides: NodeJS.ProcessEnv = {}, timeoutMs =
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     const cancellation = cancelAfterMs === undefined ? undefined : setTimeout(() => child.kill("SIGTERM"), cancelAfterMs);
     child.once("close", (status) => { clearTimeout(timer); clearTimeout(cancellation); resolve({ status, stdout, stderr }); });
+  });
+}
+
+function invokeWithoutNoMasking(): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [runner, "run", "--", process.execPath, "--input-type=module", "--eval", "process.stdout.write(JSON.stringify({version:1,credential:process.env.PI_ONEPASSWORD_CODECKS_CREDENTIAL}))"], {
+      env: { ...process.env, OP_SERVICE_ACCOUNT_TOKEN: serviceToken, PI_ONEPASSWORD_CODECKS_CREDENTIAL: "inert-codecks-credential-value" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (value) => { stdout += value; });
+    child.stderr.on("data", (value) => { stderr += value; });
+    child.once("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
 
@@ -108,12 +134,19 @@ function invokeWithOpenStdin(input: string, signalAfterMs?: number): Promise<{ s
 
 const request = { version: 1, service: "codecks", account: "example-account", profile: "work" };
 try {
+  const defaultMasked = await invokeWithoutNoMasking();
+  assert.equal(defaultMasked.status, 0, "fake op must model successful default masking");
+  assert.equal(defaultMasked.stderr, "", "fake op default masking must remain diagnostic-free");
+  assert.equal(defaultMasked.stdout, '{"version":1,"credential":"[REDACTED]"}', "without --no-masking, the fake op must replace the inert resolved value in stdout");
+  assert.notEqual(defaultMasked.stdout, '{"version":1,"credential":"inert-codecks-credential-value"}', "a real-token protocol expectation must fail under default masking");
+
   const success = await invoke(request);
   assert.equal(success.status, 0, "expected configured helper to succeed");
   assert.equal(success.stderr, "", "helper must not use stderr");
   assert.deepEqual(JSON.parse(success.stdout), { version: 1, credential: "inert-codecks-credential-value" });
   assert.equal(success.stdout, '{"version":1,"credential":"inert-codecks-credential-value"}', "expected exactly one protocol response");
-  const trace = JSON.parse(readFileSync(tracePath, "utf8")) as { child: string; args: string[]; names: string[] };
+  const trace = JSON.parse(readFileSync(tracePath, "utf8")) as { invocation: string[]; child: string; args: string[]; names: string[] };
+  assert.deepEqual(trace.invocation.slice(0, 4), ["run", "--no-masking", "--", process.execPath], "op run must use the exact private-protocol invocation and fixed current Node child");
   assert.equal(trace.child, process.execPath, "op run must use the fixed current Node child");
   assert.deepEqual(trace.args.slice(0, 2), ["--input-type=module", "--eval"], "fixed child arguments must be canonical");
   assert.equal(trace.args.join("\n").includes("op://"), false, "reference must not be in child argv");
