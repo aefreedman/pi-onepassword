@@ -92,10 +92,10 @@ try {
   mkdirSync(binDir, { recursive: true });
   if (isWindows) {
     writeFileSync(fakeOp, "@echo off\r\nexit /b 0\r\n");
-    writeFileSync(fakeNpm, "@echo off\r\nset > \"%FAKE_AUDIT%\"\r\n( echo %* ) > \"%FAKE_ARGS%\"\r\nif \"%~1\" NEQ \"run\" exit /b 97\r\nif \"%FAKE_NPM_MODE%\"==\"unavailable\" goto unavailable\r\nif \"%FAKE_NPM_MODE%\"==\"none\" exit /b 23\r\nif \"%FAKE_NPM_MODE%\"==\"malformed\" goto malformed\r\nif \"%FAKE_NPM_MODE%\"==\"extra\" goto extra\r\necho {\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}\r\nexit /b 0\r\n:unavailable\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}\r\necho sentinel-vendor-diagnostic 1>&2\r\nexit /b 23\r\n:malformed\r\necho {\"status\":\"not_authenticated\"\r\nexit /b 23\r\n:extra\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}\r\nexit /b 23\r\n");
+    writeFileSync(fakeNpm, "@echo off\r\nset > \"%FAKE_AUDIT%\"\r\n( echo %* ) > \"%FAKE_ARGS%\"\r\nif \"%~1\" NEQ \"run\" exit /b 97\r\nif \"%FAKE_NPM_MODE%\"==\"unavailable\" goto unavailable\r\nif \"%FAKE_NPM_MODE%\"==\"auth_rejected\" goto auth_rejected\r\nif \"%FAKE_NPM_MODE%\"==\"none\" exit /b 23\r\nif \"%FAKE_NPM_MODE%\"==\"malformed\" goto malformed\r\nif \"%FAKE_NPM_MODE%\"==\"extra\" goto extra\r\necho {\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}\r\nexit /b 0\r\n:unavailable\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}\r\necho sentinel-vendor-diagnostic 1>&2\r\nexit /b 23\r\n:auth_rejected\r\necho {\"status\":\"not_authenticated\",\"category\":\"authentication_rejected\",\"durationMs\":47}\r\nexit /b 23\r\n:malformed\r\necho {\"status\":\"not_authenticated\"\r\nexit /b 23\r\n:extra\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}\r\nexit /b 23\r\n");
   } else {
     writeFileSync(fakeOp, "#!/bin/sh\nexit 0\n");
-    writeFileSync(fakeNpm, "#!/bin/sh\nenv > \"$FAKE_AUDIT\"\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS\"\n[ \"$1\" = run ] || exit 97\ncase \"${FAKE_NPM_MODE:-success}\" in\n  unavailable) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}'; printf '%s\\n' 'sentinel-vendor-diagnostic' >&2; exit 23 ;;\n  none) exit 23 ;;\n  malformed) printf '%s\\n' '{\"status\":\"not_authenticated\"'; exit 23 ;;\n  extra) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}'; exit 23 ;;\nesac\nprintf '%s\\n' '{\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}'\n");
+    writeFileSync(fakeNpm, "#!/bin/sh\nenv > \"$FAKE_AUDIT\"\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS\"\n[ \"$1\" = run ] || exit 97\ncase \"${FAKE_NPM_MODE:-success}\" in\n  unavailable) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}'; printf '%s\\n' 'sentinel-vendor-diagnostic' >&2; exit 23 ;;\n  auth_rejected) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"authentication_rejected\",\"durationMs\":47}'; exit 23 ;;\n  none) exit 23 ;;\n  malformed) printf '%s\\n' '{\"status\":\"not_authenticated\"'; exit 23 ;;\n  extra) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}'; exit 23 ;;\nesac\nprintf '%s\\n' '{\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}'\n");
     chmodSync(fakeOp, 0o755);
     chmodSync(fakeNpm, 0o755);
   }
@@ -175,6 +175,17 @@ try {
     status: "not_authenticated",
     category: "unavailable",
     durationMs: 60_000,
+  });
+
+  // `authentication_rejected` is already an allowed fixed pi-codecks category;
+  // preserve it unchanged so the wrapper needs no protocol or allowlist expansion.
+  const authenticationRejected = runWrapper(selectedInput, "auth_rejected");
+  assert.equal(authenticationRejected.status, 1, "authentication rejection remains a wrapper failure");
+  assert.deepEqual(parseSingleReport(authenticationRejected), {
+    operation: "codecks-external-provider-live-validation",
+    status: "not_authenticated",
+    category: "authentication_rejected",
+    durationMs: 47,
   });
 
   for (const mode of ["none", "malformed", "extra"]) {
