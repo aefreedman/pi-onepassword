@@ -9,7 +9,6 @@ const requiredFiles = [
   "extensions/bash-op-guard.ts",
   "extensions/integrations/codecks-credential-helper.mjs",
   "extensions/shared/bash-op-guard-core.ts",
-  "extensions/shared/codecks-readonly-auth.ts",
   "extensions/shared/onepassword-env.ts",
   "extensions/shared/onepassword-trusted.ts",
   "package.json",

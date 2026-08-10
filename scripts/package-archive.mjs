@@ -14,6 +14,9 @@ export function runNpm(args, options = {}) {
     encoding: "utf8",
     maxBuffer: 10 * 1024 * 1024,
     windowsHide: true,
+    // Node cannot directly spawn a .cmd shim; npm's own invocation provides
+    // npm_execpath, but direct Node smoke commands do not.
+    shell: process.platform === "win32" && !npmCli,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {

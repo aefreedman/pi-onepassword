@@ -43,10 +43,9 @@ Likewise, this package trusts the Pi host, intentionally installed extensions, t
 
 - `runBoundedOpRun()` is the internal bounded fixed-child primitive. It discards child output, bounds cancellation, timeout, and output, and exposes only fixed accepted exit categories.
 - Repository-only Phase 3 tests retain a deterministic loopback fake identity operation to exercise the bounded `op run` boundary. It is not packaged or a public runtime contract.
-- `runCodecksReadonlyAuthCheck()` is a trusted API for the separately owned `pi-codecks` no-argument read-only identity child. Trusted user-level configuration supplies the absolute 1Password and Codecks child paths, configured reference, and safe account metadata. `pi-onepassword` injects the reference and service-account identity, strips ambient Codecks credential variables, and maps only fixed exit categories to a redacted result.
-- `extensions/integrations/codecks-credential-helper.mjs` is a stable, non-registered Codecks external-credential-helper v1 adapter. It is launched directly by `pi-codecks`, not loaded as a Pi extension or model-facing tool. It validates one non-secret Codecks request, uses the fixed `op run -- <current Node child>` contract, and returns one credential only to trusted `pi-codecks` memory. It has no dependency on `pi-codecks` and provides no discovery, cache, refresh, lease, network client, or general secret-reader API.
+- `extensions/integrations/codecks-credential-helper.mjs` is the stable, non-registered Codecks external-credential-helper v1 adapter. It is launched directly by `pi-codecks`, not loaded as a Pi extension or model-facing tool. It validates one non-secret Codecks request, uses the fixed `op run -- <current Node child>` contract, and returns one credential only to trusted `pi-codecks` memory. It has no dependency on `pi-codecks` and provides no discovery, cache, refresh, lease, network client, or general secret-reader API.
 
-The Codecks child path is trusted user-level configuration because these unreleased packages have no shared released runtime contract. This package validates it is absolute but cannot prove its package origin. Account-backed validation is optional and separately authorized; the compatibility test uses inert fakes only.
+The adapter path is stable package content, but a launcher must resolve it to an absolute installed path. Account-backed validation is optional and separately authorized; deterministic tests use inert fakes only.
 
 ## Bash defense in depth
 
@@ -107,32 +106,29 @@ npm run typecheck
 npm run scan:sensitive
 npm run pack:validate
 npm run pack:smoke
+npm run pack:composition
 npm run pack:dry-run
 ```
 
-`pack:smoke` creates a tarball, installs it offline into a credential-free neutral temporary project, and imports the installed Bash extension, Codecks adapter, and trusted helpers through a fake local `op` process. It does not import a sibling Pi package or contact a network/account. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
+`pack:smoke` keeps the normal package smoke independent of any sibling. `pack:composition` generates both package tarballs, installs only those tarballs into a neutral temporary project, and verifies that both installed package roots are real non-symlink paths inside that project. Its fixture imports the installed `pi-codecks` production external-provider exact-read path and installed adapter only; this repository's development `tsx` loader is an external test harness, not a consumer dependency. With inert fake `op` and injected fake fetch, it proves success and selected-helper failure without network, local sibling runtime imports, links, or credentials. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
 
-### Live Codecks read-only authentication check
+### Optional live external-provider validation
 
-Run this repository-only check **outside a Pi/model session**, in a fresh PowerShell 7 shell. It launches the fixed sibling `pi-codecks` identity client through `op run`; it is not packed and has no child-path, URL, request, or credential-selection argument. It writes exactly one redacted JSON outcome. Do not use a direct `op read` command or print any supplied value.
+Live execution remains **separately authorized**. When separately authorized, run this repository-only PowerShell 7 wrapper **outside a Pi/model session**:
 
 ```powershell
 pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1
 ```
 
-The wrapper locates `op` and Node, reuses non-empty process-, user-, or machine-level values for `PI_ONEPASSWORD_CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN`, and prompts with masked input only for missing values. References copied with one matching outer pair of straight single or double quotes are normalized before validation and resolution. Use `-PromptForServiceAccountToken` to override a stale inherited service-account token without placing it in command history:
+The retained filename is a migration aid; it now configures the normal `pi-codecks` external-provider path, not the retired fixed identity child. It derives this package's fixed `extensions/integrations/codecks-credential-helper.mjs` adapter and the fixed local sibling `pi-codecks` repository, then invokes only `npm run --silent validate:external-provider-live`. It reuses non-empty process-, user-, then machine-level `CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN` values, with masked prompts only for missing values. A matching outer straight quote pair is normalized from a copied reference. Use `-PromptForServiceAccountToken` to override a stale inherited token without command history.
 
-```powershell
-pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1 -PromptForServiceAccountToken
-```
-
-The wrapper suppresses vendor output and writes one redacted JSON report containing only fixed status values and exit codes. It verifies 1Password service-account authentication, non-disclosing reference injection, and the fixed Codecks identity operation. The account, reference, resolved Codecks token, service-account token, and executable paths are never printed. It temporarily removes conflicting 1Password Connect/session inputs, snapshots and restores every process-scope value it changes, and never mutates user- or machine-level environment settings.
+The wrapper sets and restores only process-scope configuration, strips conflicting 1Password Connect/session and ambient Codecks token/reference/provider variables case-insensitively, suppresses all child diagnostics, and emits one fixed redacted JSON status. It never performs a preliminary `op` command, prints account/reference/token/path data, accepts model arguments, or changes user/machine environment settings. Missing local packages, adapter, configuration, or authentication fail closed.
 
 ### Behavioral-validation boundary
 
 This package intentionally registers no model-facing secret-consuming tool, skill, prompt, or configuration subsystem: its only Pi registration is the Bash safety extension. Therefore provider-backed agent behavior is not a meaningful or available validation target. Deterministic tests instead enforce the code/tool contracts that exist: fixed operation-specific helpers, reference-only configuration, explicit service-account selection and fail-closed absence, redacted results, and Bash sanitization. A consumer package that registers a model-facing operation must validate its own agent behavior and confirmation policy.
 
-All package tests use inert fakes. The authenticated-read test starts an in-process loopback-only fake service; it does not contact 1Password, an external network, or an account. Historical characterization records under `tests/` describe the pre-rebuild behavior only; they are not current configuration or security guidance.
+All package tests use inert fakes and do not contact 1Password, an external network, or an account. Historical characterization records under `tests/` describe the pre-rebuild behavior only; they are not current configuration or security guidance.
 
 ## License
 

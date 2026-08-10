@@ -30,7 +30,6 @@ try {
     "extensions/integrations/codecks-credential-helper.mjs",
     "extensions/shared/onepassword-trusted.ts",
     "extensions/shared/onepassword-env.ts",
-    "extensions/shared/codecks-readonly-auth.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -75,7 +74,6 @@ import { spawn } from "node:child_process";
 const root = ${JSON.stringify(installedRoot)};
 const trusted = await import(pathToFileURL(root + "/extensions/shared/onepassword-trusted.ts").href);
 const env = await import(pathToFileURL(root + "/extensions/shared/onepassword-env.ts").href);
-const codecks = await import(pathToFileURL(root + "/extensions/shared/codecks-readonly-auth.ts").href);
 const bashCore = await import(pathToFileURL(root + "/extensions/shared/bash-op-guard-core.ts").href);
 const helper = root + "/extensions/integrations/codecks-credential-helper.mjs";
 const bashExtension = await import(pathToFileURL(root + "/extensions/bash-op-guard.ts").href);
@@ -103,14 +101,12 @@ bashExtension.default({ registerTool: (tool) => { registeredTool = tool; }, on: 
 assert.equal(registeredTool?.name, "bash");
 assert.equal(typeof toolCallHandler, "function");
 assert.equal(bashCore.commandRunsBlockedOp("op whoami"), true);
-const codecksResult = await codecks.runCodecksReadonlyAuthCheck({ trustedCodecksClientExecutable: codecks.validateTrustedUserConfiguredCodecksClientExecutable(process.execPath), account: "smoke-account", opExecutable: trusted.validateTrustedExecutable(process.execPath), reference, serviceAccountToken: undefined });
-assert.equal(codecksResult.category, "invalid-configuration");
-console.log("isolated packed trusted-helper and extension smoke passed");
+console.log("isolated packed trusted-helper, adapter, and extension smoke passed");
 `);
   const tsxLoader = pathToFileURL(path.join(packageRoot, "node_modules", "tsx", "dist", "loader.mjs")).href;
   const result = spawnSync(process.execPath, ["--import", tsxLoader, fixture], { cwd: consumerDir, env: cleanEnv, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, `packed helper fixture failed:\n${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, /isolated packed trusted-helper and extension smoke passed/);
+  assert.match(result.stdout, /isolated packed trusted-helper, adapter, and extension smoke passed/);
   console.log("Packed tarball smoke test passed in a credential-free neutral temporary project.");
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });

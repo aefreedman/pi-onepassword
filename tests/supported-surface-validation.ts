@@ -10,7 +10,6 @@ import {
 import * as bashGuardCore from "../extensions/shared/bash-op-guard-core.ts";
 import * as environmentHelpers from "../extensions/shared/onepassword-env.ts";
 import * as trusted from "../extensions/shared/onepassword-trusted.ts";
-import * as codecksRead from "../extensions/shared/codecks-readonly-auth.ts";
 
 const referenceText = "op://Configured Vault/identity/token";
 const serviceToken = "inert-service-account-token";
@@ -38,11 +37,6 @@ assert.deepEqual(Object.keys(trusted).sort(), [
   "validateSecretReference",
   "validateTrustedExecutable",
 ], "Trusted helper exports must remain the exact supported set.");
-assert.deepEqual(Object.keys(codecksRead).sort(), [
-  "runCodecksReadonlyAuthCheck",
-  "validateTrustedUserConfiguredCodecksClientExecutable",
-], "Codecks adapter exports must remain the exact supported set.");
-
 const reference = validateSecretReference(referenceText);
 const child = createFixedChildContract({
   executable: validateTrustedExecutable("/trusted/fixed-readonly-child"),
