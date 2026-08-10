@@ -43,8 +43,17 @@ function setProcessEnvironmentCommand(values: Record<string, string>): string {
     .join("; ");
 }
 
-function runWrapper(values: Record<string, string>, mode = "success") {
-  const command = `${setProcessEnvironmentCommand(values)}; & ${quotePowerShell(wrapperPath)}; exit $LASTEXITCODE`;
+function mockedReadHostCommand(values: readonly string[]): string {
+  return [
+    "$global:mockedPromptValues = [System.Collections.Generic.Queue[string]]::new()",
+    ...values.map((value) => `[void]$global:mockedPromptValues.Enqueue(${quotePowerShell(value)})`),
+    "function global:Read-Host { param([string]$Prompt, [switch]$MaskInput); if (-not $MaskInput) { throw 'Expected masked prompt.' }; return $global:mockedPromptValues.Dequeue() }",
+  ].join("; ");
+}
+
+function runWrapper(values: Record<string, string>, mode = "success", flags: readonly string[] = [], mockedReadHostValues?: readonly string[]) {
+  const prefix = mockedReadHostValues === undefined ? "" : `${mockedReadHostCommand(mockedReadHostValues)}; `;
+  const command = `${setProcessEnvironmentCommand(values)}; ${prefix}& ${quotePowerShell(wrapperPath)} ${flags.join(" ")}; exit $LASTEXITCODE`;
   return runPowerShell(["-Command", command], cleanEnvironment(mode === "success" ? {} : { FAKE_NPM_MODE: mode }));
 }
 
@@ -138,6 +147,27 @@ try {
     assert.equal(/^(?:OP_(?:CONNECT|SESSION)(?:_|$)|CODECKS_(?:TOKEN|API_TOKEN|TOKEN_REF|TOKEN_OP_REF)$|CODECKS_CREDENTIAL_(?:PROVIDER|HELPER_MODULE)$|PI_ONEPASSWORD_CODECKS_REFERENCE)$/i.test(key) && !["CODECKS_CREDENTIAL_PROVIDER", "CODECKS_CREDENTIAL_HELPER_MODULE", "PI_ONEPASSWORD_CODECKS_REFERENCE", "OP_SERVICE_ACCOUNT_TOKEN"].includes(key), false, `mixed-case ambient value leaked to npm: ${key}`);
   }
 
+  // Exercise the executable entrypoint with inherited values present. The
+  // narrow masked Read-Host mock proves each force flag wins without a real
+  // interactive prompt or credential.
+  const forced = runWrapper(
+    selectedInput,
+    "success",
+    ["-PromptForCodecksAccount", "-PromptForReference", "-PromptForServiceAccountToken"],
+    ["inert-prompt-account", '  "op://Inert Prompt Vault/codecks/token"  ', "inert-prompt-service-account"],
+  );
+  assert.equal(forced.status, 0, `forced prompt path failed: ${forced.stdout}\n${forced.stderr}`);
+  assert.deepEqual(parseSingleReport(forced), {
+    operation: "codecks-external-provider-live-validation",
+    status: "authenticated",
+    category: "authenticated",
+    durationMs: 47,
+  });
+  const forcedDuringRun = capturedEnvironment();
+  assert.deepEqual(valuesNamed(forcedDuringRun, "CODECKS_ACCOUNT"), [["CODECKS_ACCOUNT", "inert-prompt-account"]]);
+  assert.deepEqual(valuesNamed(forcedDuringRun, "PI_ONEPASSWORD_CODECKS_REFERENCE"), [["PI_ONEPASSWORD_CODECKS_REFERENCE", "op://Inert Prompt Vault/codecks/token"]]);
+  assert.deepEqual(valuesNamed(forcedDuringRun, "OP_SERVICE_ACCOUNT_TOKEN"), [["OP_SERVICE_ACCOUNT_TOKEN", "inert-prompt-service-account"]]);
+
   const unavailable = runWrapper(selectedInput, "unavailable");
   assert.equal(unavailable.status, 1, "nonzero child validation must map to wrapper failure");
   assert.deepEqual(parseSingleReport(unavailable), {
@@ -211,6 +241,10 @@ try {
   // Windows child harness verifies the wrapper's finally path is reachable.
   assert.match(source, /Dictionary\[string, object\]\]::new\(\[System\.StringComparer\]::Ordinal\)/);
   assert.match(source, /function Invoke-CodecksExternalProviderLiveValidation/);
+  for (const flag of ["PromptForCodecksAccount", "PromptForReference", "PromptForServiceAccountToken"]) {
+    assert.match(source, new RegExp(`\\[switch\\]\\$${flag}`), `${flag} must be accepted by the wrapper`);
+    assert.match(source, new RegExp(`-${flag}:\\$${flag}`), `${flag} must reach the direct entrypoint invocation`);
+  }
   assert.match(source, /Join-Path \$repositoryRoot 'extensions\/integrations\/codecks-credential-helper\.mjs'/);
   assert.match(source, /npm run --silent validate:external-provider-live/);
   assert.doesNotMatch(source, /SetEnvironmentVariable\([^\n]+(?:User|Machine)/);

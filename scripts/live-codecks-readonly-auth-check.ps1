@@ -1,4 +1,6 @@
 param(
+    [switch]$PromptForCodecksAccount,
+    [switch]$PromptForReference,
     [switch]$PromptForServiceAccountToken
 )
 
@@ -8,6 +10,8 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 function Invoke-CodecksExternalProviderLiveValidation {
     param(
+        [switch]$PromptForCodecksAccount,
+        [switch]$PromptForReference,
         [switch]$PromptForServiceAccountToken
     )
 
@@ -191,9 +195,9 @@ function Invoke-CodecksExternalProviderLiveValidation {
         $opExecutable = (Get-Command op -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
         if (-not [IO.Path]::IsPathRooted($opExecutable)) { throw '1Password executable is not absolute.' }
 
-        $account = Get-FirstEnvironmentValue -Name 'CODECKS_ACCOUNT'
+        $account = if ($PromptForCodecksAccount) { Read-Host 'Codecks account' -MaskInput } else { Get-FirstEnvironmentValue -Name 'CODECKS_ACCOUNT' }
         if ([string]::IsNullOrWhiteSpace($account)) { $account = Read-Host 'Codecks account' -MaskInput }
-        $reference = Get-FirstEnvironmentValue -Name 'PI_ONEPASSWORD_CODECKS_REFERENCE'
+        $reference = if ($PromptForReference) { Read-Host 'Codecks token reference' -MaskInput } else { Get-FirstEnvironmentValue -Name 'PI_ONEPASSWORD_CODECKS_REFERENCE' }
         if ([string]::IsNullOrWhiteSpace($reference)) { $reference = Read-Host 'Codecks token reference' -MaskInput }
         # On Windows a process key has one logical spelling. Preserve the raw
         # copied value before normalization even when the Env: provider cannot
@@ -267,7 +271,7 @@ function Invoke-CodecksExternalProviderLiveValidation {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $result = Invoke-CodecksExternalProviderLiveValidation -PromptForServiceAccountToken:$PromptForServiceAccountToken
+    $result = Invoke-CodecksExternalProviderLiveValidation -PromptForCodecksAccount:$PromptForCodecksAccount -PromptForReference:$PromptForReference -PromptForServiceAccountToken:$PromptForServiceAccountToken
     [Console]::Out.WriteLine(($result.report | ConvertTo-Json -Compress -Depth 2))
     exit $result.exitCode
 }
