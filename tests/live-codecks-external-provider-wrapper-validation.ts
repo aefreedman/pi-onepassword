@@ -53,10 +53,15 @@ function parseSingleReport(result: ReturnType<typeof runPowerShell>) {
   const lines = result.stdout.trim().split(/\r?\n/);
   assert.equal(lines.length, 1, "wrapper must emit exactly one JSON line");
   const report = JSON.parse(lines[0]);
-  assert.deepEqual(Object.keys(report), ["operation", "status"]);
+  assert.deepEqual(Object.keys(report), ["operation", "status", "category", "durationMs"]);
   assert.equal(report.operation, "codecks-external-provider-live-validation");
+  assert.equal(typeof report.status, "string");
+  assert.equal(typeof report.category, "string");
+  assert.equal(typeof report.durationMs, "number");
+  assert.ok(report.durationMs >= 0 && report.durationMs <= 60_000, "duration must be publicly bounded");
   assert.equal(JSON.stringify(report).includes("inert-"), false, "report must be redacted");
   assert.equal(JSON.stringify(report).includes("op://"), false, "report must not expose a reference");
+  assert.equal(JSON.stringify(report).includes("sentinel"), false, "report must not expose child diagnostics");
   return report;
 }
 
@@ -78,10 +83,10 @@ try {
   mkdirSync(binDir, { recursive: true });
   if (isWindows) {
     writeFileSync(fakeOp, "@echo off\r\nexit /b 0\r\n");
-    writeFileSync(fakeNpm, "@echo off\r\nset > \"%FAKE_AUDIT%\"\r\n( echo %* ) > \"%FAKE_ARGS%\"\r\nif \"%~1\" NEQ \"run\" exit /b 97\r\nif \"%FAKE_NPM_MODE%\"==\"fail\" exit /b 23\r\necho {\"status\":\"authenticated\",\"category\":\"authenticated\"}\r\nexit /b 0\r\n");
+    writeFileSync(fakeNpm, "@echo off\r\nset > \"%FAKE_AUDIT%\"\r\n( echo %* ) > \"%FAKE_ARGS%\"\r\nif \"%~1\" NEQ \"run\" exit /b 97\r\nif \"%FAKE_NPM_MODE%\"==\"unavailable\" goto unavailable\r\nif \"%FAKE_NPM_MODE%\"==\"none\" exit /b 23\r\nif \"%FAKE_NPM_MODE%\"==\"malformed\" goto malformed\r\nif \"%FAKE_NPM_MODE%\"==\"extra\" goto extra\r\necho {\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}\r\nexit /b 0\r\n:unavailable\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}\r\necho sentinel-vendor-diagnostic 1>&2\r\nexit /b 23\r\n:malformed\r\necho {\"status\":\"not_authenticated\"\r\nexit /b 23\r\n:extra\r\necho {\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}\r\nexit /b 23\r\n");
   } else {
     writeFileSync(fakeOp, "#!/bin/sh\nexit 0\n");
-    writeFileSync(fakeNpm, "#!/bin/sh\nenv > \"$FAKE_AUDIT\"\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS\"\n[ \"$1\" = run ] || exit 97\n[ \"${FAKE_NPM_MODE:-success}\" = fail ] && exit 23\nprintf '%s\\n' '{\"status\":\"authenticated\",\"category\":\"authenticated\"}'\n");
+    writeFileSync(fakeNpm, "#!/bin/sh\nenv > \"$FAKE_AUDIT\"\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS\"\n[ \"$1\" = run ] || exit 97\ncase \"${FAKE_NPM_MODE:-success}\" in\n  unavailable) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":120000}'; printf '%s\\n' 'sentinel-vendor-diagnostic' >&2; exit 23 ;;\n  none) exit 23 ;;\n  malformed) printf '%s\\n' '{\"status\":\"not_authenticated\"'; exit 23 ;;\n  extra) printf '%s\\n' '{\"status\":\"not_authenticated\",\"category\":\"unavailable\",\"durationMs\":1,\"unexpected\":\"sentinel\"}'; exit 23 ;;\nesac\nprintf '%s\\n' '{\"status\":\"authenticated\",\"category\":\"authenticated\",\"durationMs\":47}'\n");
     chmodSync(fakeOp, 0o755);
     chmodSync(fakeNpm, 0o755);
   }
@@ -113,7 +118,12 @@ try {
   });
   const success = runWrapper(selectedInput);
   assert.equal(success.status, 0, `wrapper authentication path failed: ${success.stdout}\n${success.stderr}`);
-  assert.equal(parseSingleReport(success).status, "authenticated");
+  assert.deepEqual(parseSingleReport(success), {
+    operation: "codecks-external-provider-live-validation",
+    status: "authenticated",
+    category: "authenticated",
+    durationMs: 47,
+  });
   assert.deepEqual(readFileSync(argsPath, "utf8").trim().split(/\r?\n|\s+/).filter(Boolean), ["run", "--silent", "validate:external-provider-live"]);
 
   const duringRun = capturedEnvironment();
@@ -128,9 +138,25 @@ try {
     assert.equal(/^(?:OP_(?:CONNECT|SESSION)(?:_|$)|CODECKS_(?:TOKEN|API_TOKEN|TOKEN_REF|TOKEN_OP_REF)$|CODECKS_CREDENTIAL_(?:PROVIDER|HELPER_MODULE)$|PI_ONEPASSWORD_CODECKS_REFERENCE)$/i.test(key) && !["CODECKS_CREDENTIAL_PROVIDER", "CODECKS_CREDENTIAL_HELPER_MODULE", "PI_ONEPASSWORD_CODECKS_REFERENCE", "OP_SERVICE_ACCOUNT_TOKEN"].includes(key), false, `mixed-case ambient value leaked to npm: ${key}`);
   }
 
-  const failed = runWrapper(selectedInput, "fail");
-  assert.equal(failed.status, 1, "failed child validation must map to wrapper failure");
-  assert.equal(parseSingleReport(failed).status, "not_authenticated");
+  const unavailable = runWrapper(selectedInput, "unavailable");
+  assert.equal(unavailable.status, 1, "nonzero child validation must map to wrapper failure");
+  assert.deepEqual(parseSingleReport(unavailable), {
+    operation: "codecks-external-provider-live-validation",
+    status: "not_authenticated",
+    category: "unavailable",
+    durationMs: 60_000,
+  });
+
+  for (const mode of ["none", "malformed", "extra"]) {
+    const failed = runWrapper(selectedInput, mode);
+    assert.equal(failed.status, 1, `${mode} child output must map to wrapper failure`);
+    assert.deepEqual(parseSingleReport(failed), {
+      operation: "codecks-external-provider-live-validation",
+      status: "not_authenticated",
+      category: "invalid_configuration",
+      durationMs: 0,
+    });
+  }
 
   // Dot-sourcing exposes only the narrow wrapper function to this in-process
   // child harness, allowing restoration to be observed after its finally block.

@@ -19,7 +19,14 @@ function Invoke-CodecksExternalProviderLiveValidation {
     $script:previous = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
     $script:changedNames = [System.Collections.Generic.List[string]]::new()
     $exitCode = 1
-    $report = [ordered]@{ operation = 'codecks-external-provider-live-validation'; status = 'not_authenticated' }
+    # Public timing is bounded even if a trusted sibling accidentally reports an excessive value.
+    $maxPublicDurationMs = [int64]60000
+    $report = [ordered]@{
+        operation = 'codecks-external-provider-live-validation'
+        status = 'not_authenticated'
+        category = 'invalid_configuration'
+        durationMs = [int64]0
+    }
 
     function Get-ProcessEnvironmentNames {
         return @(Get-ChildItem Env: | ForEach-Object { [string]$_.Name })
@@ -159,9 +166,9 @@ function Invoke-CodecksExternalProviderLiveValidation {
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
         $process.WaitForExit()
-        $lines = @($stdout.GetAwaiter().GetResult() -split "`r?`n" | Where-Object { $_ -ne '' })
+        $stdoutText = $stdout.GetAwaiter().GetResult()
         [void]$stderr.GetAwaiter().GetResult()
-        return [pscustomobject]@{ lines = $lines; exitCode = $process.ExitCode }
+        return [pscustomobject]@{ stdout = $stdoutText; exitCode = $process.ExitCode }
     }
 
     try {
@@ -208,13 +215,43 @@ function Invoke-CodecksExternalProviderLiveValidation {
         Set-ProcessEnvironmentValue -Name 'OP_SERVICE_ACCOUNT_TOKEN' -Value $serviceAccountToken
         Remove-Variable account, reference, serviceAccountToken -ErrorAction SilentlyContinue
 
-        # Launches only `npm run --silent validate:external-provider-live`.
+        # Launches only `npm run --silent validate:external-provider-live`. Accept exactly
+        # one JSON object with the sibling's fixed public fields; malformed or expanded
+        # diagnostics fail closed rather than being copied into this public boundary.
         $validation = Invoke-ExternalProviderValidation -WorkingDirectory $siblingRoot
-        $candidate = $null
-        try { $candidate = (($validation.lines -join '') | ConvertFrom-Json -ErrorAction Stop) } catch {}
-        if ($validation.exitCode -eq 0 -and $candidate.status -eq 'authenticated' -and $candidate.category -eq 'authenticated') {
-            $report.status = 'authenticated'
-            $exitCode = 0
+        $matchedOutput = $validation.stdout -match '^(?<payload>\{[^\r\n]+\})(?:\r\n|\n)?$'
+        if ($matchedOutput) {
+            try {
+                $candidate = $Matches['payload'] | ConvertFrom-Json -ErrorAction Stop
+                $propertyNames = @($candidate.PSObject.Properties.Name)
+                $expectedProperties = 'category,durationMs,status'
+                $hasExactProperties = $propertyNames.Count -eq 3 -and (($propertyNames | Sort-Object) -join ',') -ceq $expectedProperties
+                $allowedCategories = @('authenticated', 'authentication_rejected', 'invalid_configuration', 'malformed_response', 'unavailable')
+                $rawDuration = $candidate.durationMs
+                $isNumericDuration = $rawDuration -is [byte] -or $rawDuration -is [sbyte] -or $rawDuration -is [int16] -or $rawDuration -is [uint16] -or $rawDuration -is [int32] -or $rawDuration -is [uint32] -or $rawDuration -is [int64] -or $rawDuration -is [uint64] -or $rawDuration -is [single] -or $rawDuration -is [double] -or $rawDuration -is [decimal]
+                if ($hasExactProperties -and $isNumericDuration) {
+                    $category = [string]$candidate.category
+                    $status = [string]$candidate.status
+                    $duration = [double]$rawDuration
+                    $hasValidDuration = [double]::IsFinite($duration) -and $duration -ge 0 -and $duration -eq [math]::Truncate($duration)
+                    $hasValidPair = ($category -ceq 'authenticated' -and $status -ceq 'authenticated') -or ($category -cne 'authenticated' -and $status -ceq 'not_authenticated' -and $allowedCategories -ccontains $category)
+                    if ($hasValidDuration -and $hasValidPair) {
+                        if ($category -cne 'authenticated') {
+                            $report.category = $category
+                            $report.durationMs = [int64][math]::Min([double]$maxPublicDurationMs, $duration)
+                        }
+                        elseif ($validation.exitCode -eq 0) {
+                            $report.status = 'authenticated'
+                            $report.category = 'authenticated'
+                            $report.durationMs = [int64][math]::Min([double]$maxPublicDurationMs, $duration)
+                            $exitCode = 0
+                        }
+                    }
+                }
+            }
+            catch {
+                # Keep the fixed invalid-configuration/zero-duration report.
+            }
         }
     }
     catch {
