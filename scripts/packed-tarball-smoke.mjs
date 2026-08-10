@@ -27,6 +27,7 @@ try {
   assert.deepEqual(packageJson.pi?.extensions, ["./extensions/bash-op-guard.ts"]);
   for (const relativePath of [
     "extensions/bash-op-guard.ts",
+    "extensions/integrations/codecks-credential-helper.mjs",
     "extensions/shared/onepassword-trusted.ts",
     "extensions/shared/onepassword-env.ts",
     "extensions/shared/codecks-readonly-auth.ts",
@@ -54,6 +55,19 @@ if (process.env.PI_PACKED_AUTH_TOKEN !== "inert-packed-resolved-token") process.
 if (process.env.OP_SERVICE_ACCOUNT_TOKEN) process.exit(2);
 process.exit(0);
 `);
+  writeFileSync(path.join(consumerDir, "run"), `
+const { spawn } = require("node:child_process");
+const [delimiter, child, ...args] = process.argv.slice(2);
+const serviceAccount = "inert-packed-" + "service-account-token";
+if (delimiter !== "--" || !child || process.env.OP_SERVICE_ACCOUNT_TOKEN !== serviceAccount) process.exit(64);
+if (process.env.CODECKS_TOKEN || process.env.PI_ONEPASSWORD_CODECKS_REFERENCE) process.exit(65);
+const env = { ...process.env, PI_ONEPASSWORD_CODECKS_CREDENTIAL: "inert-packed-codecks-credential" };
+delete env.OP_SERVICE_ACCOUNT_TOKEN;
+const launched = spawn(child, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+launched.stdout.pipe(process.stdout); launched.stderr.pipe(process.stderr);
+launched.once("error", () => process.exit(66));
+launched.once("close", (code) => process.exit(code ?? 66));
+`);
   writeFileSync(fixture, `
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
@@ -63,11 +77,21 @@ const trusted = await import(pathToFileURL(root + "/extensions/shared/onepasswor
 const env = await import(pathToFileURL(root + "/extensions/shared/onepassword-env.ts").href);
 const codecks = await import(pathToFileURL(root + "/extensions/shared/codecks-readonly-auth.ts").href);
 const bashCore = await import(pathToFileURL(root + "/extensions/shared/bash-op-guard-core.ts").href);
+const helper = root + "/extensions/integrations/codecks-credential-helper.mjs";
 const bashExtension = await import(pathToFileURL(root + "/extensions/bash-op-guard.ts").href);
 const reference = trusted.validateSecretReference("op://Smoke Vault/identity/token");
 const token = "inert-packed-service-account-token";
 const child = trusted.createFixedChildContract({ executable: trusted.validateTrustedExecutable(process.execPath), args: [${JSON.stringify(child)}], referenceEnvironmentName: "PI_PACKED_AUTH_TOKEN" });
 const result = await trusted.runBoundedOpRun({ opExecutable: trusted.validateTrustedExecutable(${JSON.stringify(fakeOp)}), child, reference, serviceAccountToken: token, inheritedEnvironment: { OP_CONNECT_TOKEN: "ambient", OP_SESSION_WORK: "ambient" }, spawnProcess: (_exe, args, options) => spawn(process.execPath, [${JSON.stringify(fakeOp)}, ...args], options) });
+assert.deepEqual(result, { operation: "op-run", exitCode: 0 });
+const helperResult = await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [helper], { cwd: process.cwd(), env: { PATH: process.env.PATH, PI_ONEPASSWORD_OP_EXECUTABLE: process.execPath, PI_ONEPASSWORD_CODECKS_REFERENCE: '"op://Smoke Vault/codecks/token"', OP_SERVICE_ACCOUNT_TOKEN: token, CODECKS_TOKEN: "inert-ambient-codecks-token" }, stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = ""; let stderr = "";
+  child.stdout.on("data", (value) => { stdout += value; }); child.stderr.on("data", (value) => { stderr += value; });
+  child.stdin.end(JSON.stringify({ version: 1, service: "codecks", account: "smoke-account" }));
+  child.once("error", reject); child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error("packed credential helper failed")));
+});
+assert.deepEqual(helperResult, { stdout: '{"version":1,"credential":"inert-packed-codecks-credential"}', stderr: "" });
 assert.deepEqual(result, { operation: "op-run", exitCode: 0 });
 assert.equal(JSON.stringify(result).includes(token), false);
 assert.equal(JSON.stringify(result).includes(reference), false);

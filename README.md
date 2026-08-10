@@ -25,7 +25,7 @@ An `op://...` value is a **reference**: an identifier for a 1Password value. It 
 - an explicitly supplied `OP_SERVICE_ACCOUNT_TOKEN`; conflicting service-account, Connect, and session inputs are removed case-insensitively before invocation; and
 - a fixed child, arguments, destination, and operation that return only redacted results.
 
-A model-facing integration must offer a complete fixed operation, not accept an arbitrary reference, executable, destination, operation, or request payload merely because it needs a credential. No helper returns a resolved secret value.
+A model-facing integration must offer a complete fixed operation, not accept an arbitrary reference, executable, destination, operation, or request payload merely because it needs a credential. No registered Pi helper returns a resolved secret value. The non-registered Codecks protocol adapter is the narrow exception: its only successful output is the required v1 credential response to its trusted `pi-codecks` parent; it never exposes that value to a Pi model-facing operation.
 
 ### Service-account grants are the authority boundary
 
@@ -44,6 +44,7 @@ Likewise, this package trusts the Pi host, intentionally installed extensions, t
 - `runBoundedOpRun()` is the internal bounded fixed-child primitive. It discards child output, bounds cancellation, timeout, and output, and exposes only fixed accepted exit categories.
 - Repository-only Phase 3 tests retain a deterministic loopback fake identity operation to exercise the bounded `op run` boundary. It is not packaged or a public runtime contract.
 - `runCodecksReadonlyAuthCheck()` is a trusted API for the separately owned `pi-codecks` no-argument read-only identity child. Trusted user-level configuration supplies the absolute 1Password and Codecks child paths, configured reference, and safe account metadata. `pi-onepassword` injects the reference and service-account identity, strips ambient Codecks credential variables, and maps only fixed exit categories to a redacted result.
+- `extensions/integrations/codecks-credential-helper.mjs` is a stable, non-registered Codecks external-credential-helper v1 adapter. It is launched directly by `pi-codecks`, not loaded as a Pi extension or model-facing tool. It validates one non-secret Codecks request, uses the fixed `op run -- <current Node child>` contract, and returns one credential only to trusted `pi-codecks` memory. It has no dependency on `pi-codecks` and provides no discovery, cache, refresh, lease, network client, or general secret-reader API.
 
 The Codecks child path is trusted user-level configuration because these unreleased packages have no shared released runtime contract. This package validates it is absolute but cannot prove its package origin. Account-backed validation is optional and separately authorized; the compatibility test uses inert fakes only.
 
@@ -81,6 +82,22 @@ For local development:
 ```bash
 pi install <path-to-pi-onepassword>
 ```
+
+### Codecks external-helper configuration
+
+Configure this only in a trusted launcher or user-level environment before starting Pi. `pi-codecks` owns provider selection and launches the adapter with the current Node executable and no arguments; do not put these values in a project, prompt, tool call, or model-visible configuration.
+
+```bash
+export CODECKS_CREDENTIAL_PROVIDER=external-helper
+export CODECKS_CREDENTIAL_HELPER_MODULE=/absolute/path/to/node_modules/@aefree/pi-onepassword/extensions/integrations/codecks-credential-helper.mjs
+export PI_ONEPASSWORD_OP_EXECUTABLE=/absolute/path/to/op
+export PI_ONEPASSWORD_CODECKS_REFERENCE='op://vault/item/field'
+export OP_SERVICE_ACCOUNT_TOKEN=…
+```
+
+The adapter accepts only its version-1 stdin request. It does not accept a manager executable, reference, service token, URL, request data, credential variable name, or child command through arguments or the request. It removes case-insensitive 1Password Connect/session/alternate service-account variables and ambient Codecks credential/provider variables before `op run`, then supplies the reference solely through its fixed child binding. One overall deadline begins before stdin is read; cancellation, input failure, overflow, malformed input, manager failure, stderr, or invalid output destroys stdin, terminates any active child tree, and fails closed with no response or diagnostic. It never falls back to ambient Codecks credentials.
+
+This boundary narrows routine Codecks token exposure, but the token is necessarily returned to trusted `pi-codecks` memory to construct its HTTPS request. It is not isolation from the same OS user, trusted extensions, or a compromised host.
 
 ## Testing
 

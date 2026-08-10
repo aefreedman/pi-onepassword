@@ -18,7 +18,7 @@
     ]
   },
   "scripts": {
-    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/bash-op-guard-extension-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts && tsx tests/codecks-readonly-auth-validation.ts && tsx tests/live-codecks-readonly-auth-check-validation.ts && tsx tests/supported-surface-validation.ts",
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/bash-op-guard-extension-validation.ts && tsx tests/codecks-credential-helper-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/fixed-authenticated-read-validation.ts && tsx tests/codecks-readonly-auth-validation.ts && tsx tests/live-codecks-readonly-auth-check-validation.ts && tsx tests/supported-surface-validation.ts",
     "live:codecks-readonly-auth": "tsx scripts/live-codecks-readonly-auth-check.ts",
     "typecheck": "tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run --json",
