@@ -65,10 +65,16 @@ This package does not provide a broker, daemon, privileged helper, IPC protocol,
 
 ## Install
 
-Recommended as a global package:
+Install the public npm package:
 
 ```bash
-pi install git:git@github.com:aefreedman/pi-onepassword.git
+pi install npm:@aefree/pi-onepassword
+```
+
+To install directly from the public GitHub repository instead:
+
+```bash
+pi install git:https://github.com/aefreedman/pi-onepassword.git
 ```
 
 For local development:
