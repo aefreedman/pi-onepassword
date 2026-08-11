@@ -18,14 +18,14 @@ An `op://...` value is a **reference**: an identifier for a 1Password value. It 
 
 ### Trusted integration helpers, not model-facing tools
 
-`extensions/shared/onepassword-trusted.ts` and the operation-specific helpers are APIs for deliberately trusted extension code. They require:
+`extensions/shared/onepassword-trusted.ts` is an API for deliberately trusted extension code. It requires:
 
 - an absolute trusted 1Password executable and absolute fixed child executable; never `PATH` lookup;
 - a configured reference bound only through a fixed child environment variable, never child arguments;
 - an explicitly supplied `OP_SERVICE_ACCOUNT_TOKEN`; conflicting service-account, Connect, and session inputs are removed case-insensitively before invocation; and
 - a fixed child, arguments, destination, and operation that return only redacted results.
 
-A model-facing integration must offer a complete fixed operation, not accept an arbitrary reference, executable, destination, operation, or request payload merely because it needs a credential. No registered Pi helper returns a resolved secret value. The non-registered Codecks protocol adapter is the narrow exception: its only successful output is the required v1 credential response to its trusted `pi-codecks` parent; it never exposes that value to a Pi model-facing operation.
+A model-facing integration must offer a complete fixed operation, not accept an arbitrary reference, executable, destination, operation, or request payload merely because it needs a credential. No registered Pi helper returns a resolved secret value.
 
 ### Service-account grants are the authority boundary
 
@@ -42,10 +42,7 @@ Likewise, this package trusts the Pi host, intentionally installed extensions, t
 ## Available fixed contracts
 
 - `runBoundedOpRun()` is the internal bounded fixed-child primitive. It discards child output, bounds cancellation, timeout, and output, and exposes only fixed accepted exit categories.
-- Repository-only Phase 3 tests retain a deterministic loopback fake identity operation to exercise the bounded `op run` boundary. It is not packaged or a public runtime contract.
-- `extensions/integrations/codecks-credential-helper.mjs` is the stable, non-registered Codecks external-credential-helper v1 adapter. It is launched directly by `pi-codecks`, not loaded as a Pi extension or model-facing tool. It validates one non-secret Codecks request, uses the fixed `op run --no-masking -- <current Node child>` contract, and returns one credential only to trusted `pi-codecks` memory. It has no dependency on `pi-codecks` and provides no discovery, cache, refresh, lease, network client, or general secret-reader API.
-
-The adapter path is stable package content, but a launcher must resolve it to an absolute installed path. Account-backed validation is optional and separately authorized; deterministic tests use inert fakes only.
+- Repository-only tests retain a deterministic loopback fake identity operation to exercise the bounded `op run` boundary. It is not packaged or a public runtime contract.
 
 ## Bash defense in depth
 
@@ -82,22 +79,6 @@ For local development:
 pi install <path-to-pi-onepassword>
 ```
 
-### Codecks external-helper configuration
-
-Configure this only in a trusted launcher or user-level environment before starting Pi. `pi-codecks` owns provider selection and launches the adapter with the current Node executable and no arguments; do not put these values in a project, prompt, tool call, or model-visible configuration.
-
-```bash
-export CODECKS_CREDENTIAL_PROVIDER=external-helper
-export CODECKS_CREDENTIAL_HELPER_MODULE=/absolute/path/to/node_modules/@aefree/pi-onepassword/extensions/integrations/codecks-credential-helper.mjs
-export PI_ONEPASSWORD_OP_EXECUTABLE=/absolute/path/to/op
-export PI_ONEPASSWORD_CODECKS_REFERENCE='op://vault/item/field'
-export OP_SERVICE_ACCOUNT_TOKEN=…
-```
-
-The adapter accepts only its version-1 stdin request. It does not accept a manager executable, reference, service token, URL, request data, credential variable name, or child command through arguments or the request. It removes case-insensitive 1Password Connect/session/alternate service-account variables and ambient Codecks credential/provider variables before `op run`, then supplies the reference solely through its fixed child binding. Its `--no-masking` flag applies only to the private bounded stdout protocol consumed by trusted `pi-codecks`; it prevents protocol corruption, not public disclosure, and no credential may reach argv, stderr, diagnostics, logs, or model-facing output. One overall deadline begins before stdin is read; cancellation, input failure, overflow, malformed input, manager failure, stderr, or invalid output destroys stdin, terminates any active child tree, and fails closed with no response or diagnostic. It never falls back to ambient Codecks credentials.
-
-This boundary narrows routine Codecks token exposure, but the token is necessarily returned to trusted `pi-codecks` memory to construct its HTTPS request. It is not isolation from the same OS user, trusted extensions, or a compromised host.
-
 ## Testing
 
 ```bash
@@ -106,35 +87,10 @@ npm run typecheck
 npm run scan:sensitive
 npm run pack:validate
 npm run pack:smoke
-npm run pack:composition
 npm run pack:dry-run
 ```
 
-`pack:smoke` keeps the normal package smoke independent of any sibling. `pack:composition` generates both package tarballs, installs only those tarballs into a neutral temporary project, and verifies that both installed package roots are real non-symlink paths inside that project. Its fixture imports the installed `pi-codecks` production external-provider exact-read path and installed adapter only; this repository's development `tsx` loader is an external test harness, not a consumer dependency. With inert fake `op` and injected fake fetch, it proves success and selected-helper failure without network, local sibling runtime imports, links, or credentials. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
-
-### Optional live external-provider validation
-
-Live execution remains **separately authorized**. When separately authorized, run this repository-only PowerShell 7 wrapper **outside a Pi/model session**:
-
-```powershell
-pwsh -NoProfile -File .\scripts\live-codecks-readonly-auth-check.ps1 -PromptForCodecksAccount -PromptForReference -PromptForServiceAccountToken
-```
-
-The retained filename is a migration aid; it now configures the normal `pi-codecks` external-provider path, not the retired fixed identity child. It derives this package's fixed `extensions/integrations/codecks-credential-helper.mjs` adapter and the fixed local sibling `pi-codecks` repository, then invokes only `npm run --silent validate:external-provider-live`. It reuses non-empty process-, user-, then machine-level `CODECKS_ACCOUNT`, `PI_ONEPASSWORD_CODECKS_REFERENCE`, and `OP_SERVICE_ACCOUNT_TOKEN` values, with masked prompts only for missing values. A matching outer straight quote pair is normalized from a copied reference. Use `-PromptForCodecksAccount`, `-PromptForReference`, and/or `-PromptForServiceAccountToken` to override stale inherited values without command history; the command above forces all three one-line masked prompts.
-
-The wrapper sets and restores only process-scope configuration, strips conflicting 1Password Connect/session and ambient Codecks token/reference/provider variables case-insensitively, suppresses all child diagnostics, and emits exactly one redacted JSON object with `operation`, `status`, `category`, and `durationMs`. It accepts only the sibling launcher's fixed categories, including the pre-existing `authentication_rejected` category, rejects malformed or expanded child output, and clamps `durationMs` to `0..60000`; absent or invalid child output reports `invalid_configuration` with duration `0`. It preserves those categories unchanged, so an upstream identity-classification refinement requires no 1Password protocol or allowlist change. It never performs a preliminary `op` command, prints account/reference/token/path data, accepts model arguments, or changes user/machine environment settings. Missing local packages, adapter, configuration, or authentication fail closed.
-
-### Launch a normal Pi Codecks session
-
-The fixed identity validator can continue to report `authentication_rejected`; that category does not establish whether the token can make a normal Codecks read. To test the normal `pi-codecks` tool path (for example, `codecks_card_get`) in a **fresh interactive Pi process**, separately authorize the live test and run this trusted local source-checkout launcher from PowerShell 7:
-
-```powershell
-& 'C:\path\to\pi-onepassword\scripts\start-pi-codecks-external-helper.ps1'
-```
-
-It prompts once, with masked input, for the Codecks account slug, `op://` reference, and 1Password service-account token; a copied reference may have one matching outer straight quote pair. It resolves this checkout's fixed `extensions/integrations/codecks-credential-helper.mjs` adapter, the sibling `../pi-codecks` development package, and the `op` and `pi` applications from trusted local paths. It then starts the regular interactive command `pi --extension <absolute-sibling-pi-codecks-path>`, loading the reviewed development package for that run only without a global/project install or settings mutation. The package path is the only Pi argument; account, reference, and token are process-only child environment values, never Pi arguments, output, persisted configuration, or user/machine environment settings. It removes case-insensitive ambient direct Codecks, external-provider, 1Password Connect/session, and alternate service-token settings before launch, does not set `PI_CODECKS_ALLOW_LIVE_VALIDATION`, waits for Pi, returns Pi's exit code, and restores the invoking PowerShell process environment exactly.
-
-This is intentionally a repository-only setup script, not a packed runtime asset: use the source checkout path above rather than an installed package path. The optional trusted `-PiCodecksPackagePath <absolute-package-directory>` parameter overrides the default sibling checkout after directory and Pi package-manifest validation. The launcher does not install packages, register another tool or operation, or perform a preliminary `op` command, network request, identity check, or validation acknowledgement. Once Pi is open, use the normal consumer tool under that consumer's own confirmation and authorization policy.
+`pack:smoke` installs a generated tarball offline in a neutral credential-free project and imports the installed Bash extension and trusted helpers. `scan:sensitive` scans repository text and npm-installed packed bytes with bounded high-signal patterns; every match fails unless an exact inert file/value pair is allowlisted. It is evidence, not proof that secrets are impossible or absent.
 
 ### Behavioral-validation boundary
 

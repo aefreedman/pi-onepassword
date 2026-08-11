@@ -18,12 +18,11 @@
     ]
   },
   "scripts": {
-    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/bash-op-guard-extension-validation.ts && tsx tests/codecks-credential-helper-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/live-codecks-external-provider-wrapper-validation.ts && tsx tests/start-pi-codecks-external-helper-validation.ts && tsx tests/supported-surface-validation.ts",
+    "test": "tsx tests/bash-op-guard-validation.ts && tsx tests/bash-op-guard-extension-validation.ts && tsx tests/trusted-op-run-validation.ts && tsx tests/supported-surface-validation.ts",
     "typecheck": "tsc --noEmit",
     "pack:dry-run": "npm pack --dry-run --json",
     "pack:validate": "node scripts/validate-pack-manifest.mjs",
     "pack:smoke": "node scripts/packed-tarball-smoke.mjs",
-    "pack:composition": "node scripts/packed-composition-smoke.mjs",
     "scan:sensitive": "node scripts/validate-sensitive-content.mjs"
   },
   "peerDependencies": {

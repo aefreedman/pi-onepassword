@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pack, packageRoot } from "./package-archive.mjs";
 
@@ -7,14 +7,12 @@ const requiredFiles = [
   "LICENSE",
   "README.md",
   "extensions/bash-op-guard.ts",
-  "extensions/integrations/codecks-credential-helper.mjs",
   "extensions/shared/bash-op-guard-core.ts",
   "extensions/shared/onepassword-env.ts",
   "extensions/shared/onepassword-trusted.ts",
   "package.json",
 ];
 const allowedExact = new Set(["CHANGELOG.md", "LICENSE", "README.md", "package.json"]);
-const sourceOnlyFiles = ["scripts/start-pi-codecks-external-helper.ps1"];
 const allowedPrefixes = ["extensions/"];
 const forbiddenPathPatterns = [
   { label: "test or fixture", pattern: /^tests\// },
@@ -34,10 +32,6 @@ const forbiddenContentPatterns = [
 const result = pack({ dryRun: true });
 const files = result.files.map((entry) => String(entry.path).replaceAll("\\", "/")).sort();
 const errors = [];
-for (const sourceOnly of sourceOnlyFiles) {
-  if (!existsSync(path.join(packageRoot, ...sourceOnly.split("/")))) errors.push(`missing repository-only launcher: ${sourceOnly}`);
-  if (files.includes(sourceOnly)) errors.push(`repository-only launcher must not be packed: ${sourceOnly}`);
-}
 for (const required of requiredFiles) if (!files.includes(required)) errors.push(`missing required package file: ${required}`);
 for (const file of files) {
   if (!allowedExact.has(file) && !allowedPrefixes.some((prefix) => file.startsWith(prefix))) {
