@@ -1,7 +1,6 @@
 {
   "name": "@aefree/pi-onepassword",
-  "private": true,
-  "version": "0.1.3",
+  "version": "0.2.0",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -36,6 +35,9 @@
   },
   "description": "Least-privilege 1Password helpers and Bash safety policy for Pi.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/aefreedman/pi-onepassword.git"

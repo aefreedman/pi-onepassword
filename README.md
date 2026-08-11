@@ -50,16 +50,14 @@ The Pi Bash extension removes `OP_SERVICE_ACCOUNT_TOKEN` (including suffixed for
 
 It also blocks Bash command text that mentions `op` or `op://...`. This lexical check is accidental-use prevention only, not proof that an invocation would occur and not an authorization or isolation boundary: shell runtime construction can bypass it, while harmless text can produce false positives. Do not rely on the guard to contain a determined command or other same-user code.
 
-## Migration from the legacy helper and allowlist
+## Building a trusted integration
 
-This migration is non-destructive. It never requires revealing, reading, copying, printing, or persisting an existing credential. There is no drop-in configuration loader, raw-reader replacement, or model-facing migration endpoint in this package; do not treat these helpers as one.
-
-For each integration author, use this credential-free recipe:
+There is no drop-in configuration loader, raw-reader, or model-facing endpoint in this package. For each integration, use this credential-free recipe:
 
 1. Define the consumer-owned trusted user-level configuration contract: an absolute 1Password executable path, an absolute fixed child executable path, a reference (or approved logical binding), the child's designated reference environment-variable name, and fixed non-secret child metadata. Keep that configuration user-level and trusted, never model-controlled or project-selected.
-2. Validate those inputs with the existing `validateTrustedExecutable()` and `validateSecretReference()` helpers, then construct the fixed child with `createFixedChildContract()`. Call `runBoundedOpRun()` only from the consumer's operation-specific adapter, with its fixed child, arguments, destination, accepted exit categories, and redacted public result. The reference and service-account token go to the trusted 1Password invocation; `op run` resolves the reference and supplies plaintext only to the child's designated environment variable.
+2. Validate those inputs with `validateTrustedExecutable()` and `validateSecretReference()`, then construct the fixed child with `createFixedChildContract()`. Call `runBoundedOpRun()` only from the consumer's operation-specific adapter, with its fixed child, arguments, destination, accepted exit categories, and redacted public result. The reference and service-account token go to the trusted 1Password invocation; `op run` resolves the reference and supplies plaintext only to the child's designated environment variable.
 3. Have the trusted launcher supply `OP_SERVICE_ACCOUNT_TOKEN` to that invocation. It must not put the token in argv, shell history, project configuration, package configuration, source files, prompts, or persisted project data. Have the 1Password administrator create or select a dedicated least-privilege service account whose server-side grants are the authorization boundary.
-4. Do not retire a legacy consumer's ambient-identity or allowlist usage until that consumer has its own operation-specific adapter. Do not replace it with a model-facing `op read` call or plaintext-returning wrapper. No migration command needs to contact a vault or inspect existing values.
+4. Define a complete fixed operation rather than exposing a model-facing `op read` call or plaintext-returning wrapper. No setup command needs to contact a vault or inspect existing values.
 
 ## Non-goals
 
@@ -96,7 +94,7 @@ npm run pack:dry-run
 
 This package intentionally registers no model-facing secret-consuming tool, skill, prompt, or configuration subsystem: its only Pi registration is the Bash safety extension. Therefore provider-backed agent behavior is not a meaningful or available validation target. Deterministic tests instead enforce the code/tool contracts that exist: fixed operation-specific helpers, reference-only configuration, explicit service-account selection and fail-closed absence, redacted results, and Bash sanitization. A consumer package that registers a model-facing operation must validate its own agent behavior and confirmation policy.
 
-All package tests use inert fakes and do not contact 1Password, an external network, or an account. Historical characterization records under `tests/` describe the pre-rebuild behavior only; they are not current configuration or security guidance.
+All package tests use inert fakes and do not contact 1Password, an external network, or an account.
 
 ## License
 
